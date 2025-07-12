@@ -1,6 +1,9 @@
-﻿#include <SDL3/SDL.h>
+﻿#include <string>
+
+#include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include <string>
+
+#include <Vulkan/Vulkan.h>
 
 constexpr int client_area_width { 1280 };
 constexpr int client_area_height { 720 };
@@ -9,61 +12,74 @@ SDL_Window* sdl_window{ nullptr };
 
 bool init()
 {
-    bool success{ true };
-
-    if( SDL_Init( SDL_INIT_VIDEO ) == false )
+    if(SDL_Init( SDL_INIT_VIDEO ) == false)
     {
         SDL_Log( "SDL could not initialize! SDL error: %s\n", SDL_GetError() );
-        success = false;
-    }
-    else
-    {
-        if( sdl_window = SDL_CreateWindow( "VV", client_area_width, client_area_height, 0 ); sdl_window == nullptr )
-        {
-            SDL_Log( "Window could not be created! SDL error: %s\n", SDL_GetError() );
-            success = false;
-        }
+        return false;
     }
 
-    return success;
+    sdl_window = SDL_CreateWindow( "VV", client_area_width, client_area_height, 0 );
+
+    if(sdl_window == nullptr)
+    {
+        SDL_Log( "Window could not be created! SDL error: %s\n", SDL_GetError() );
+        return false;
+    }
+
+    return true;
 }
 
+VkInstance instance;
+
+bool init_vulkan_instance()
+{
+    VkApplicationInfo appInfo{};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "VV";
+    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.pEngineName = "VV";
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_4;
+
+    VkInstanceCreateInfo createInfo{};
+    createInfo.pNext = nullptr;
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &appInfo;
+
+    createInfo.enabledLayerCount = 0;
+
+    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
+    {
+        printf("Failed to initialize Vulkan with vkCreateInstance.\n");
+        return false;
+    }
+    return true;
+}
 
 int main( int argc, char* args[] )
 {
     if( init() == false )
     {
-        SDL_Log( "Unable to initialize program!\n" );
+        printf("Failed to initialize SDL.\n");
     }
     else
     {
-        //The quit flag
-        bool quit{ false };
+        init_vulkan_instance();
 
-        //The event data
         SDL_Event e;
-        SDL_zero( e );
+        SDL_zero(e);
 
-        //The main loop
-        while( quit == false )
+        bool quit{ false };
+        while(!quit)
         {
-            //Get event data
-            while( SDL_PollEvent( &e ) == true )
+            while(SDL_PollEvent( &e ) == true)
             {
-                //If event is quit type
-                if( e.type == SDL_EVENT_QUIT )
-                {
-                    //End the main loop
+                if(e.type == SDL_EVENT_QUIT)
                     quit = true;
-                }
             }
-
-            //Update the surface
-            SDL_UpdateWindowSurface( sdl_window );
         }
     }
 
     SDL_Quit();
-
     return 0;
 }
