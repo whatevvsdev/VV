@@ -1,18 +1,18 @@
 ﻿#include <string>
 
+#include "renderer.h"
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-
-#include <Vulkan/Vulkan.h>
 
 constexpr int client_area_width { 1280 };
 constexpr int client_area_height { 720 };
 
 SDL_Window* sdl_window{ nullptr };
 
-bool init()
+bool initalize_sdl()
 {
-    if(SDL_Init( SDL_INIT_VIDEO ) == false)
+    if(!SDL_Init( SDL_INIT_VIDEO ))
     {
         SDL_Log( "SDL could not initialize! SDL error: %s\n", SDL_GetError() );
         return false;
@@ -29,42 +29,11 @@ bool init()
     return true;
 }
 
-VkInstance instance;
-
-bool init_vulkan_instance()
-{
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "VV";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "VV";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_4;
-
-    VkInstanceCreateInfo createInfo{};
-    createInfo.pNext = nullptr;
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-
-    createInfo.enabledLayerCount = 0;
-
-    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
-    {
-        printf("Failed to initialize Vulkan with vkCreateInstance.\n");
-        return false;
-    }
-    return true;
-}
-
 int main( int argc, char* args[] )
 {
-    if( init() == false )
+    if (initalize_sdl())
     {
-        printf("Failed to initialize SDL.\n");
-    }
-    else
-    {
-        init_vulkan_instance();
+        Renderer::initialize();
 
         SDL_Event e;
         SDL_zero(e);
@@ -72,12 +41,16 @@ int main( int argc, char* args[] )
         bool quit{ false };
         while(!quit)
         {
-            while(SDL_PollEvent( &e ) == true)
+            while(SDL_PollEvent( &e ))
             {
                 if(e.type == SDL_EVENT_QUIT)
                     quit = true;
             }
         }
+    }
+    else
+    {
+        printf("Failed to initialize SDL.\n");
     }
 
     SDL_Quit();

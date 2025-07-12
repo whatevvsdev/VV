@@ -3,7 +3,9 @@ project(VV)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(VV main.cpp)
+add_executable(VV main.cpp
+        Renderer.cpp
+        Renderer.h)
 
 add_subdirectory(lib)
 target_link_libraries(VV PRIVATE SDL3::SDL3)
