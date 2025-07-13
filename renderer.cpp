@@ -108,7 +108,6 @@ bool create_vulkan_device()
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     create_info.pNext = nullptr;
-    create_info.flags = 0; // Reserved
 
     float queue_priority = 1.0f;
     std::vector<VkDeviceQueueCreateInfo> queue_create_infos(1);
@@ -122,11 +121,8 @@ bool create_vulkan_device()
     create_info.queueCreateInfoCount = queue_create_infos.size();
     create_info.pQueueCreateInfos = queue_create_infos.data();
 
-    create_info.enabledLayerCount = 0; // Deprecated
-    create_info.ppEnabledLayerNames = nullptr; // Deprecated
     create_info.enabledExtensionCount = 0;
     create_info.ppEnabledExtensionNames = nullptr;
-    create_info.pEnabledFeatures = nullptr; // Deprecated
 
     bool created_device = vkCreateDevice(core.physical_device, &create_info, nullptr, &core.device) == VK_SUCCESS;
 
