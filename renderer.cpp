@@ -111,6 +111,7 @@ bool create_vulkan_device()
 
     float queue_priority = 1.0f;
     std::vector<VkDeviceQueueCreateInfo> queue_create_infos(1);
+    queue_create_infos[0] = {};
     queue_create_infos[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
     queue_create_infos[0].pNext = nullptr;
     queue_create_infos[0].flags = 0;
