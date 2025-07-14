@@ -18,7 +18,7 @@ struct
 
     VkPhysicalDevice physical_device { VK_NULL_HANDLE };
     VkDevice device { VK_NULL_HANDLE };
-    u32 graphics_and_compute_queue_family_index { 0 };
+    u32 queue_family_index { 0 }; // Supports Presentation, Graphics and Compute (and Transfer implicitly)
 
     VkSurfaceKHR surface { VK_NULL_HANDLE };
 } core;
@@ -160,7 +160,7 @@ bool pick_vulkan_physical_device()
             if ((flags & VK_QUEUE_GRAPHICS_BIT) && (flags & VK_QUEUE_COMPUTE_BIT) && presentation_supported)
             {
                 core.physical_device = physical_devices[i];
-                core.graphics_and_compute_queue_family_index = f;
+                core.queue_family_index = f;
                 printf("Found and picked device with name: %s\n", device_properties[i].properties.deviceName);
                 break;
             }
@@ -182,7 +182,7 @@ bool create_vulkan_device()
     queue_create_infos[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
     queue_create_infos[0].pNext = nullptr;
     queue_create_infos[0].flags = 0;
-    queue_create_infos[0].queueFamilyIndex = core.graphics_and_compute_queue_family_index;
+    queue_create_infos[0].queueFamilyIndex = core.queue_family_index;
     queue_create_infos[0].queueCount = 1;
     queue_create_infos[0].pQueuePriorities = &queue_priority;
 
