@@ -21,6 +21,7 @@ struct
 } core;
 
 // TODO: Add some sort of error handling for these
+// TODO: Enable validation layers
 
 bool create_vulkan_instance()
 {
@@ -193,6 +194,8 @@ void Renderer::update()
 void Renderer::terminate()
 {
     // TODO: Replace this with a deletion queue
+    vkDestroySurfaceKHR(core.instance, core.surface, nullptr);
+    vkDestroyDevice(core.device, nullptr);
     vkDestroyInstance(core.instance, nullptr);
 }
 
