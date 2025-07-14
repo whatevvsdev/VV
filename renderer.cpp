@@ -23,6 +23,12 @@ struct
 // TODO: Add some sort of error handling for these
 // TODO: Enable validation layers
 
+const std::vector validation_layers = {
+#if RENDERER_DEBUG
+    "VK_LAYER_KHRONOS_validation"
+#endif
+};
+
 bool create_vulkan_instance()
 {
     VkApplicationInfo application_info{};
@@ -37,7 +43,8 @@ bool create_vulkan_instance()
     instance_create_info.pNext = nullptr;
     instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instance_create_info.pApplicationInfo = &application_info;
-    instance_create_info.enabledLayerCount = 0;
+    instance_create_info.enabledLayerCount = validation_layers.size();
+    instance_create_info.ppEnabledLayerNames = validation_layers.empty() ? nullptr : validation_layers.data();
 
     // Get instance extensions from SDL and add them to our create info
     std::vector<const char*> instance_extensions;
