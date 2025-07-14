@@ -5,31 +5,54 @@
 
 #include <Vulkan/Vulkan.h>
 
+#include "SDL3/SDL_log.h"
+#include "SDL3/SDL_vulkan.h"
+
 struct
 {
+    SDL_Window* window_ptr;
+
     VkInstance instance { VK_NULL_HANDLE };
     VkPhysicalDevice physical_device { VK_NULL_HANDLE };
     VkDevice device { VK_NULL_HANDLE };
     u32 graphics_and_compute_queue_family_index { 0 };
+
+    VkSurfaceKHR surface { VK_NULL_HANDLE };
 } core;
+
+// TODO: Add some sort of error handling for these
 
 bool create_vulkan_instance()
 {
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "VV";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "VV";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_4;
+    VkApplicationInfo application_info{};
+    application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    application_info.pApplicationName = "VV";
+    application_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    application_info.pEngineName = "VV";
+    application_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    application_info.apiVersion = VK_API_VERSION_1_4;
 
-    VkInstanceCreateInfo createInfo{};
-    createInfo.pNext = nullptr;
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledLayerCount = 0;
+    VkInstanceCreateInfo instance_create_info{};
+    instance_create_info.pNext = nullptr;
+    instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    instance_create_info.pApplicationInfo = &application_info;
+    instance_create_info.enabledLayerCount = 0;
 
-    bool created_instance = vkCreateInstance(&createInfo, nullptr, &core.instance) == VK_SUCCESS;
+    // Get instance extensions from SDL and add them to our create info
+    std::vector<const char*> instance_extensions;
+
+    u32 sdl_instance_extensions_count;
+    const char * const *sdl_instance_extensions = SDL_Vulkan_GetInstanceExtensions(&sdl_instance_extensions_count);
+
+    for (i32 i = 0; i < sdl_instance_extensions_count; i++)
+    {
+        instance_extensions.push_back(sdl_instance_extensions[i]);
+    }
+
+    instance_create_info.enabledExtensionCount = static_cast<u32>(instance_extensions.size());
+    instance_create_info.ppEnabledExtensionNames = instance_extensions.data();
+
+    bool created_instance = vkCreateInstance(&instance_create_info, nullptr, &core.instance) == VK_SUCCESS;
 
     if (!created_instance)
     {
@@ -85,6 +108,7 @@ bool pick_vulkan_physical_device()
         std::vector<VkQueueFamilyProperties> queue_family_properties(queue_family_count);
         vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &queue_family_count, queue_family_properties.data());
 
+
         // Find a suitable graphics card
         for (u32 f = 0; f < queue_family_count; f++)
         {
@@ -105,11 +129,11 @@ bool pick_vulkan_physical_device()
 
 bool create_vulkan_device()
 {
-    VkDeviceCreateInfo create_info{};
-    create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    create_info.pNext = nullptr;
+    VkDeviceCreateInfo device_create_info{};
+    device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    device_create_info.pNext = nullptr;
 
-    float queue_priority = 1.0f;
+    f32 queue_priority = 1.0f;
     std::vector<VkDeviceQueueCreateInfo> queue_create_infos(1);
     queue_create_infos[0] = {};
     queue_create_infos[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -119,13 +143,11 @@ bool create_vulkan_device()
     queue_create_infos[0].queueCount = 1;
     queue_create_infos[0].pQueuePriorities = &queue_priority;
 
-    create_info.queueCreateInfoCount = queue_create_infos.size();
-    create_info.pQueueCreateInfos = queue_create_infos.data();
+    device_create_info.queueCreateInfoCount = queue_create_infos.size();
+    device_create_info.pQueueCreateInfos = queue_create_infos.data();
 
-    create_info.enabledExtensionCount = 0;
-    create_info.ppEnabledExtensionNames = nullptr;
-
-    bool created_device = vkCreateDevice(core.physical_device, &create_info, nullptr, &core.device) == VK_SUCCESS;
+    VkResult result = vkCreateDevice(core.physical_device, &device_create_info, nullptr, &core.device);
+    bool created_device = result == VK_SUCCESS;
 
     if (!created_device)
     {
@@ -133,15 +155,34 @@ bool create_vulkan_device()
         core.device = VK_NULL_HANDLE;
         return false;
     }
+    printf("Created Vulkan device.\n");
 
     return true;
 }
 
-void Renderer::initialize()
+bool create_sdl_surface()
+{
+    bool created_surface = SDL_Vulkan_CreateSurface(core.window_ptr, core.instance, nullptr, &core.surface);
+
+    if(!created_surface)
+    {
+        SDL_Log( "Window surface could not be created! SDL error: %s\n", SDL_GetError() );
+        return false;
+    }
+
+    printf("Created Vulkan surface.\n");
+
+    return true;
+}
+
+void Renderer::initialize(SDL_Window* sdl_window_ptr)
 {
     create_vulkan_instance();
     pick_vulkan_physical_device();
     create_vulkan_device();
+
+    core.window_ptr = sdl_window_ptr;
+    create_sdl_surface();
 }
 
 void Renderer::update()

@@ -12,13 +12,13 @@ SDL_Window* sdl_window{ nullptr };
 
 bool initalize_sdl()
 {
-    if(!SDL_Init( SDL_INIT_VIDEO ))
+    if(!SDL_Init( SDL_INIT_VIDEO))
     {
         SDL_Log( "SDL could not initialize! SDL error: %s\n", SDL_GetError() );
         return false;
     }
 
-    sdl_window = SDL_CreateWindow( "VV", client_area_width, client_area_height, 0 );
+    sdl_window = SDL_CreateWindow( "VV", client_area_width, client_area_height, SDL_WINDOW_VULKAN);
 
     if(sdl_window == nullptr)
     {
@@ -33,7 +33,7 @@ int main( int argc, char* args[] )
 {
     if (initalize_sdl())
     {
-        Renderer::initialize();
+        Renderer::initialize(sdl_window);
 
         SDL_Event e;
         SDL_zero(e);
