@@ -152,9 +152,12 @@ bool pick_vulkan_physical_device()
         // Find a suitable graphics card
         for (u32 f = 0; f < queue_family_count; f++)
         {
+            VkBool32 presentation_supported {};
+            vkGetPhysicalDeviceSurfaceSupportKHR(physical_devices[i], f, core.surface, &presentation_supported);
+
             VkQueueFlags& flags = queue_family_properties[f].queueFlags;
             // Transfer queue is implicitly valid thanks to graphics/compute
-            if ((flags & VK_QUEUE_GRAPHICS_BIT) && (flags & VK_QUEUE_COMPUTE_BIT))
+            if ((flags & VK_QUEUE_GRAPHICS_BIT) && (flags & VK_QUEUE_COMPUTE_BIT) && presentation_supported)
             {
                 core.physical_device = physical_devices[i];
                 core.graphics_and_compute_queue_family_index = f;
@@ -219,11 +222,12 @@ void Renderer::initialize(SDL_Window* sdl_window_ptr)
 {
     create_vulkan_instance();
     create_debug_messenger();
-    pick_vulkan_physical_device();
-    create_vulkan_device();
 
     core.window_ptr = sdl_window_ptr;
     create_sdl_surface();
+
+    pick_vulkan_physical_device();
+    create_vulkan_device();
 }
 
 void Renderer::update()
