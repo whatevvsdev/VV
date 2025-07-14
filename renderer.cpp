@@ -13,6 +13,9 @@ struct
     SDL_Window* window_ptr;
 
     VkInstance instance { VK_NULL_HANDLE };
+
+    VkDebugUtilsMessengerEXT debug_messenger;
+
     VkPhysicalDevice physical_device { VK_NULL_HANDLE };
     VkDevice device { VK_NULL_HANDLE };
     u32 graphics_and_compute_queue_family_index { 0 };
@@ -25,7 +28,7 @@ struct
 
 const std::vector validation_layers = {
 #if RENDERER_DEBUG
-    "VK_LAYER_KHRONOS_validation"
+    "VK_LAYER_KHRONOS_validation",
 #endif
 };
 
@@ -46,16 +49,17 @@ bool create_vulkan_instance()
     instance_create_info.enabledLayerCount = validation_layers.size();
     instance_create_info.ppEnabledLayerNames = validation_layers.empty() ? nullptr : validation_layers.data();
 
-    // Get instance extensions from SDL and add them to our create info
     std::vector<const char*> instance_extensions;
 
+    // Get instance extensions from SDL and add them to our create info
     u32 sdl_instance_extensions_count;
     const char * const *sdl_instance_extensions = SDL_Vulkan_GetInstanceExtensions(&sdl_instance_extensions_count);
 
     for (i32 i = 0; i < sdl_instance_extensions_count; i++)
-    {
         instance_extensions.push_back(sdl_instance_extensions[i]);
-    }
+
+    // Add debug utils extension
+    instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
     instance_create_info.enabledExtensionCount = static_cast<u32>(instance_extensions.size());
     instance_create_info.ppEnabledExtensionNames = instance_extensions.data();
@@ -70,6 +74,42 @@ bool create_vulkan_instance()
     }
 
     printf("Created Vulkan instance.\n");
+    return true;
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageType,
+        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void*) {
+
+    printf(pCallbackData->pMessage);
+
+    return VK_FALSE; // Applications must return false here
+}
+
+bool create_debug_messenger()
+{
+#if RENDERER_DEBUG
+    //core.debug_messenger =
+    VkDebugUtilsMessengerCreateInfoEXT messenger_create_info{};
+    messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+    messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    messenger_create_info.pfnUserCallback = vk_debug_callback;
+
+    auto vk_create_debug_utils_messenger_ext_void_function = vkGetInstanceProcAddr( core.instance, "vkCreateDebugUtilsMessengerEXT" );
+    auto vk_create_debug_utils_messenger_ext_function = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(vk_create_debug_utils_messenger_ext_void_function);
+
+    bool created_debug_messenger = vk_create_debug_utils_messenger_ext_function(core.instance, &messenger_create_info, nullptr, &core.debug_messenger) == VK_SUCCESS;
+
+    if (!created_debug_messenger)
+    {
+        printf("Failed to create Vulkan debug messenger.\n");
+        core.debug_messenger = VK_NULL_HANDLE;
+        return false;
+    }
+    printf("Created Vulkan debug messenger.\n");
+    #endif
     return true;
 }
 
@@ -108,7 +148,6 @@ bool pick_vulkan_physical_device()
         // Get queue family properties
         std::vector<VkQueueFamilyProperties> queue_family_properties(queue_family_count);
         vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &queue_family_count, queue_family_properties.data());
-
 
         // Find a suitable graphics card
         for (u32 f = 0; f < queue_family_count; f++)
@@ -179,6 +218,7 @@ bool create_sdl_surface()
 void Renderer::initialize(SDL_Window* sdl_window_ptr)
 {
     create_vulkan_instance();
+    create_debug_messenger();
     pick_vulkan_physical_device();
     create_vulkan_device();
 
