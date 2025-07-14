@@ -83,20 +83,13 @@ bool pick_vulkan_physical_device()
     VkPhysicalDevice physical_devices[physical_device_count];
     vkEnumeratePhysicalDevices(core.instance, &physical_device_count, physical_devices);
 
-    struct DeviceProperties
-    {
-        VkPhysicalDeviceProperties properties;
-        VkPhysicalDeviceProperties2 properties2;
-    };
-
     // Get the properties of all devices
-    std::vector<DeviceProperties> device_properties(physical_device_count);
+    std::vector<VkPhysicalDeviceProperties2> device_properties(physical_device_count);
 
     for (u32 i = 0; i < physical_device_count; i++)
     {
-        device_properties[i].properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-        device_properties[i].properties2.pNext = &device_properties[i].properties;
-        vkGetPhysicalDeviceProperties2(physical_devices[i], &device_properties[i].properties2);
+        device_properties[i].sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        vkGetPhysicalDeviceProperties2(physical_devices[i], &device_properties[i]);
     }
 
     if (physical_device_count == 0)
@@ -126,7 +119,7 @@ bool pick_vulkan_physical_device()
             {
                 core.physical_device = physical_devices[i];
                 core.graphics_and_compute_queue_family_index = f;
-                printf("Found and picked device with name: %s\n", device_properties[i].properties2.properties.deviceName);
+                printf("Found and picked device with name: %s\n", device_properties[i].properties.deviceName);
                 break;
             }
         }
