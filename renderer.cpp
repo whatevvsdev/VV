@@ -41,20 +41,24 @@ const std::vector validation_layers = {
 
 bool create_vulkan_instance()
 {
-    VkApplicationInfo application_info{};
-    application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    application_info.pApplicationName = "VV";
-    application_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    application_info.pEngineName = "VV";
-    application_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    application_info.apiVersion = VK_API_VERSION_1_4;
+    VkApplicationInfo application_info
+    {
+        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pApplicationName = "VV",
+        .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+        .pEngineName = "VV",
+        .engineVersion = VK_MAKE_VERSION(1, 0, 0),
+        .apiVersion = VK_API_VERSION_1_4,
+    };
 
-    VkInstanceCreateInfo instance_create_info{};
-    instance_create_info.pNext = nullptr;
-    instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    instance_create_info.pApplicationInfo = &application_info;
-    instance_create_info.enabledLayerCount = validation_layers.size();
-    instance_create_info.ppEnabledLayerNames = validation_layers.empty() ? nullptr : validation_layers.data();
+    VkInstanceCreateInfo instance_create_info
+    {
+        .pNext = nullptr,
+        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pApplicationInfo = &application_info,
+        .enabledLayerCount = static_cast<u32>(validation_layers.size()),
+        .ppEnabledLayerNames = validation_layers.empty() ? nullptr : validation_layers.data(),
+    };
 
     std::vector<const char*> instance_extensions;
 
@@ -98,11 +102,13 @@ bool create_debug_messenger()
 {
 #if RENDERER_DEBUG
     //core.debug_messenger =
-    VkDebugUtilsMessengerCreateInfoEXT messenger_create_info{};
-    messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-    messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
-    messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-    messenger_create_info.pfnUserCallback = vk_debug_callback;
+    VkDebugUtilsMessengerCreateInfoEXT messenger_create_info
+    {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
+        .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+        .pfnUserCallback = vk_debug_callback,
+    };
 
     auto vk_create_debug_utils_messenger_ext_void_function = vkGetInstanceProcAddr( core.instance, "vkCreateDebugUtilsMessengerEXT" );
     auto vk_create_debug_utils_messenger_ext_function = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(vk_create_debug_utils_messenger_ext_void_function);
@@ -120,7 +126,7 @@ bool create_debug_messenger()
     return true;
 }
 
-bool pick_vulkan_physical_device()
+bool select_vulkan_physical_device()
 {
     // Get count of physical devices available
     u32 physical_device_count { 0 };
@@ -348,7 +354,7 @@ void Renderer::initialize(SDL_Window* sdl_window_ptr)
     core.window_ptr = sdl_window_ptr;
     create_sdl_surface();
 
-    pick_vulkan_physical_device();
+    select_vulkan_physical_device();
     create_vulkan_device();
     create_swapchain();
 }
