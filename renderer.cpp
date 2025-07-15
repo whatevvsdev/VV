@@ -1,4 +1,6 @@
 ﻿#include "renderer.h"
+
+#include <algorithm>
 #include <cstdio>
 #include <vector>
 #include "types.h"
@@ -21,6 +23,11 @@ struct
     u32 queue_family_index { 0 }; // Supports Presentation, Graphics and Compute (and Transfer implicitly)
 
     VkSurfaceKHR surface { VK_NULL_HANDLE };
+    VkSurfaceFormatKHR swapchain_surface_format { VK_FORMAT_UNDEFINED };
+    VkExtent2D swapchain_surface_extent { 0, 0};
+    u32 swapchain_image_count { 0 };
+    VkSwapchainKHR swapchain { VK_NULL_HANDLE };
+    std::vector<VkImage> swapchain_images {};
 } core;
 
 // TODO: Add some sort of error handling for these
@@ -170,6 +177,48 @@ bool pick_vulkan_physical_device()
     return true;
 }
 
+VkSurfaceFormatKHR select_ideal_swapchain_format(const std::vector<VkSurfaceFormatKHR>& available_swapchain_formats)
+{
+    for (const auto& available_swapchain_format : available_swapchain_formats)
+    {
+        if (available_swapchain_format.format == VK_FORMAT_B8G8R8_SRGB && available_swapchain_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        {
+            return available_swapchain_format;
+        }
+    }
+
+    return available_swapchain_formats[0];
+}
+
+VkPresentModeKHR select_ideal_present_mode(const std::vector<VkPresentModeKHR>& available_present_modes)
+{
+    for (const auto& available_present_mode : available_present_modes)
+    {
+        if (available_present_mode == VK_PRESENT_MODE_MAILBOX_KHR)
+        {
+            return available_present_mode;
+        }
+    }
+
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR& capabilities)
+{
+    if (capabilities.currentExtent.width != UINT32_MAX)
+        return capabilities.currentExtent;
+
+    i32 width, height;
+    SDL_GetWindowSizeInPixels(core.window_ptr, &width, &height);
+
+    return
+    {
+        // TODO: Replace with glm clamp
+        std::clamp<u32>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+        std::clamp<u32>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height)
+    };
+}
+
 bool create_vulkan_device()
 {
     VkDeviceCreateInfo device_create_info{};
@@ -188,6 +237,16 @@ bool create_vulkan_device()
 
     device_create_info.queueCreateInfoCount = queue_create_infos.size();
     device_create_info.pQueueCreateInfos = queue_create_infos.data();
+
+    std::vector<const char*> device_extensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        VK_KHR_SPIRV_1_4_EXTENSION_NAME,
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+        VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,
+    };
+
+    device_create_info.enabledExtensionCount = device_extensions.size();
+    device_create_info.ppEnabledExtensionNames = device_extensions.data();
 
     VkResult result = vkCreateDevice(core.physical_device, &device_create_info, nullptr, &core.device);
     bool created_device = result == VK_SUCCESS;
@@ -218,6 +277,69 @@ bool create_sdl_surface()
     return true;
 }
 
+bool create_swapchain()
+{
+    VkSurfaceCapabilitiesKHR surface_capabilities;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(core.physical_device, core.surface, &surface_capabilities);
+
+    u32 available_surface_format_count { 0 };
+    vkGetPhysicalDeviceSurfaceFormatsKHR(core.physical_device, core.surface, &available_surface_format_count, nullptr);
+    std::vector<VkSurfaceFormatKHR> available_surface_formats(available_surface_format_count);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(core.physical_device, core.surface, &available_surface_format_count, available_surface_formats.data());
+
+    // Pick extent and format for swapchain backing images
+    core.swapchain_surface_format = select_ideal_swapchain_format(available_surface_formats);
+    core.swapchain_surface_extent = choose_swap_extent(surface_capabilities);
+
+    // Get the minimum count of swapchain images
+    u32 min_swapchain_image_count = std::max( 3u, surface_capabilities.minImageCount );
+    min_swapchain_image_count = ( surface_capabilities.maxImageCount > 0 && min_swapchain_image_count > surface_capabilities.maxImageCount ) ? surface_capabilities.maxImageCount : min_swapchain_image_count;
+
+    // Add an extra image for extra margin
+    core.swapchain_image_count = min_swapchain_image_count + 1;
+
+    // Make sure not to accidentally exceed maximum
+    if (surface_capabilities.maxImageCount > 0 && core.swapchain_image_count > surface_capabilities.maxImageCount)
+        core.swapchain_image_count = surface_capabilities.maxImageCount;
+
+    u32 available_present_modes_count { 0 };
+    vkGetPhysicalDeviceSurfacePresentModesKHR(core.physical_device, core.surface, &available_present_modes_count, nullptr);
+    std::vector<VkPresentModeKHR> available_present_modes(available_present_modes_count);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(core.physical_device, core.surface, &available_present_modes_count, available_present_modes.data());
+
+    VkSwapchainCreateInfoKHR swapchain_create_info {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface = core.surface,
+        .minImageCount = min_swapchain_image_count,
+        .imageFormat = core.swapchain_surface_format.format,
+        .imageColorSpace = core.swapchain_surface_format.colorSpace,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .preTransform = surface_capabilities.currentTransform,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = select_ideal_present_mode(available_present_modes),
+        .clipped = true,
+        .oldSwapchain = nullptr,
+    };
+
+    VkResult result = vkCreateSwapchainKHR(core.device, &swapchain_create_info, nullptr, &core.swapchain);
+    bool created_swapchain = result == VK_SUCCESS;
+
+    core.swapchain_images.resize(core.swapchain_image_count);
+    vkGetSwapchainImagesKHR(core.device, core.swapchain, &core.swapchain_image_count, core.swapchain_images.data());
+
+    if (!created_swapchain)
+    {
+        printf("Failed to create Vulkan swpachain.\n");
+        core.swapchain = VK_NULL_HANDLE;
+        return false;
+    }
+
+    printf("Created Vulkan swpachain.\n");
+    return true;
+}
+
 void Renderer::initialize(SDL_Window* sdl_window_ptr)
 {
     create_vulkan_instance();
@@ -228,6 +350,7 @@ void Renderer::initialize(SDL_Window* sdl_window_ptr)
 
     pick_vulkan_physical_device();
     create_vulkan_device();
+    create_swapchain();
 }
 
 void Renderer::update()
