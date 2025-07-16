@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cstdio>
 #include <vector>
+
 #include "types.h"
+#include "io.h"
 
 #include <Vulkan/Vulkan.h>
 
@@ -380,6 +382,22 @@ bool create_swapchain_image_views()
     return true;
 }
 
+bool create_graphics_pipeline()
+{
+    auto vert_binary = IO::read_binary_file("shaders/shader_base.vert.spv");
+    auto frag_binary = IO::read_binary_file("shaders/shader_base.frag.spv");
+
+    if (vert_binary.empty() || frag_binary.empty())
+    {
+        printf("Failed to read .frag or .vert compiled binary file");
+        return false;
+    }
+    printf("Read .frag and .vert compiled binary file");
+
+    return true;
+}
+
+
 void Renderer::initialize(SDL_Window* sdl_window_ptr)
 {
     create_vulkan_instance();
@@ -392,6 +410,8 @@ void Renderer::initialize(SDL_Window* sdl_window_ptr)
     create_vulkan_device();
     create_swapchain();
     create_swapchain_image_views();
+
+    create_graphics_pipeline();
 }
 
 void Renderer::update()

@@ -6,7 +6,9 @@ set(CMAKE_CXX_STANDARD 20)
 add_executable(VV main.cpp
         Renderer.cpp
         Renderer.h
-        types.h)
+        types.h
+        io.cpp
+        io.h)
 
 add_subdirectory(lib)
 
@@ -21,3 +23,14 @@ set(CMAKE_PREFIX_PATH "${VULKAN_SDK}")
 
 find_package(Vulkan REQUIRED)
 target_link_libraries(VV PRIVATE Vulkan::Vulkan)
+
+# Copy shaders after build
+set(SHADER_TARGET_DIR "${CMAKE_BINARY_DIR}/shaders")
+set(COMPILED_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders/spirv-out")
+add_custom_command(TARGET VV POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_TARGET_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${COMPILED_SHADER_DIR}"
+        "${SHADER_TARGET_DIR}"
+        COMMENT "Copying compiled shaders to ${SHADER_TARGET_DIR}"
+)
