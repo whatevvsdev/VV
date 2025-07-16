@@ -46,6 +46,8 @@ int main( int argc, char* args[] )
                 if(e.type == SDL_EVENT_QUIT)
                     quit = true;
             }
+
+            Renderer::update();
         }
     }
     else
