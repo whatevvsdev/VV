@@ -28,6 +28,7 @@ struct
     u32 swapchain_image_count { 0 };
     VkSwapchainKHR swapchain { VK_NULL_HANDLE };
     std::vector<VkImage> swapchain_images {};
+    std::vector<VkImageView> swapchain_image_views {};
 } core;
 
 // TODO: Add some sort of error handling for these
@@ -53,8 +54,8 @@ bool create_vulkan_instance()
 
     VkInstanceCreateInfo instance_create_info
     {
-        .pNext = nullptr,
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pNext = nullptr,
         .pApplicationInfo = &application_info,
         .enabledLayerCount = static_cast<u32>(validation_layers.size()),
         .ppEnabledLayerNames = validation_layers.empty() ? nullptr : validation_layers.data(),
@@ -316,7 +317,7 @@ bool create_swapchain()
     VkSwapchainCreateInfoKHR swapchain_create_info {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = core.surface,
-        .minImageCount = min_swapchain_image_count,
+        .minImageCount = core.swapchain_image_count,
         .imageFormat = core.swapchain_surface_format.format,
         .imageColorSpace = core.swapchain_surface_format.colorSpace,
         .imageArrayLayers = 1,
@@ -337,12 +338,45 @@ bool create_swapchain()
 
     if (!created_swapchain)
     {
-        printf("Failed to create Vulkan swpachain.\n");
+        printf("Failed to create Vulkan swapchain.\n");
         core.swapchain = VK_NULL_HANDLE;
         return false;
     }
 
-    printf("Created Vulkan swpachain.\n");
+    printf("Created Vulkan swapchain.\n");
+    return true;
+}
+
+bool create_swapchain_image_views()
+{
+    core.swapchain_image_views.clear();
+    core.swapchain_image_views.resize(core.swapchain_image_count);
+
+    VkImageViewCreateInfo swapchain_image_view_create_info {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .viewType = VkImageViewType::VK_IMAGE_VIEW_TYPE_2D,
+        .format = core.swapchain_surface_format.format,
+        .subresourceRange = VkImageSubresourceRange { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0 ,1 },
+    };
+
+    i32 index = 0;
+    for (auto image : core.swapchain_images)
+    {
+        swapchain_image_view_create_info.image = image;
+        VkResult result = vkCreateImageView(core.device, &swapchain_image_view_create_info, nullptr, &core.swapchain_image_views[index]);
+
+        bool created_image_view = result == VK_SUCCESS;
+
+        if (!created_image_view)
+        {
+            printf("Failed to create Vulkan swapchain image view.\n");
+            return false;
+        }
+        index++;
+    }
+
+    printf("Created Vulkan swapchain image views.\n");
+
     return true;
 }
 
@@ -357,6 +391,7 @@ void Renderer::initialize(SDL_Window* sdl_window_ptr)
     select_vulkan_physical_device();
     create_vulkan_device();
     create_swapchain();
+    create_swapchain_image_views();
 }
 
 void Renderer::update()
