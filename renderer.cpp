@@ -747,7 +747,11 @@ void Renderer::update()
     VkResult acquire_image_result = vkAcquireNextImageKHR(core.device, core.swapchain, UINT64_MAX, core.present_complete_semaphore, nullptr, &rendered_image_count);
 
     if (acquire_image_result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
         resize_swapchain();
+        return;
+    }
+
 
     record_command_buffer(rendered_image_count);
     VK_CHECK(vkResetFences(core.device, 1, &core.draw_fence));
@@ -755,7 +759,7 @@ void Renderer::update()
     VkPipelineStageFlags stage_flags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit_info = {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .waitSemaphoreCount = 0,
+        .waitSemaphoreCount = 1,
         .pWaitSemaphores = &core.present_complete_semaphore,
         .pWaitDstStageMask = &stage_flags,
         .commandBufferCount = 1,
