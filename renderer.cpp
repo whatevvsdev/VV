@@ -22,13 +22,20 @@ abort();                                                   \
 }                                                          \
 } while (0)
 
+struct PerFrameData
+{
+    VkSemaphore swapchain_semaphore { VK_NULL_HANDLE };
+    VkSemaphore render_semaphore { VK_NULL_HANDLE };
+    VkFence render_fence { VK_NULL_HANDLE };
+};
+
 struct
 {
-    SDL_Window* window_ptr;
+    SDL_Window* window_ptr { nullptr };
 
     VkInstance instance { VK_NULL_HANDLE };
 
-    VkDebugUtilsMessengerEXT debug_messenger;
+    VkDebugUtilsMessengerEXT debug_messenger { VK_NULL_HANDLE };
 
     VkPhysicalDevice physical_device { VK_NULL_HANDLE };
     VkDevice device { VK_NULL_HANDLE };
@@ -49,13 +56,8 @@ struct
     VkCommandPool command_pool { VK_NULL_HANDLE };
     VkCommandBuffer command_buffer { VK_NULL_HANDLE };
 
-    VkSemaphore present_complete_semaphore = VK_NULL_HANDLE;
-    VkSemaphore render_finished_semaphore = VK_NULL_HANDLE;
-    VkFence draw_fence = VK_NULL_HANDLE;
+    PerFrameData* per_frame_data { nullptr };
 } core;
-
-// TODO: Add some sort of error handling for these
-// TODO: Enable validation layers
 
 const std::vector validation_layers = {
 #if RENDERER_DEBUG
@@ -387,7 +389,6 @@ bool create_swapchain_image_views()
     }
 
     printf("Created Vulkan swapchain image views.\n");
-
     return true;
 }
 
@@ -688,9 +689,16 @@ void create_sync_objects()
         .flags = VK_FENCE_CREATE_SIGNALED_BIT,
     };
 
-    VK_CHECK(vkCreateSemaphore(core.device, &semaphore_info, nullptr, &core.present_complete_semaphore));
-    VK_CHECK(vkCreateSemaphore(core.device, &semaphore_info, nullptr, &core.render_finished_semaphore));
-    VK_CHECK(vkCreateFence(core.device, &fence_info, nullptr, &core.draw_fence));
+    if (core.per_frame_data == nullptr)
+        core.per_frame_data = new PerFrameData[core.swapchain_image_count];
+
+    for (i32 i = 0; i < core.swapchain_image_count; i++)
+    {
+        auto& per_frame_data = core.per_frame_data[i];
+        VK_CHECK(vkCreateSemaphore(core.device, &semaphore_info, nullptr, &per_frame_data.swapchain_semaphore));
+        VK_CHECK(vkCreateSemaphore(core.device, &semaphore_info, nullptr, &per_frame_data.render_semaphore));
+        VK_CHECK(vkCreateFence(core.device, &fence_info, nullptr, &per_frame_data.render_fence));
+    }
 }
 
 void resize_swapchain()
@@ -744,7 +752,9 @@ void Renderer::initialize(SDL_Window* sdl_window_ptr)
 u32 rendered_image_count = 0;
 void Renderer::update()
 {
-    VkResult acquire_image_result = vkAcquireNextImageKHR(core.device, core.swapchain, UINT64_MAX, core.present_complete_semaphore, nullptr, &rendered_image_count);
+    auto& per_frame_data = core.per_frame_data[rendered_image_count % core.swapchain_image_count];
+
+    VkResult acquire_image_result = vkAcquireNextImageKHR(core.device, core.swapchain, UINT64_MAX, per_frame_data.swapchain_semaphore, nullptr, &rendered_image_count);
 
     if (acquire_image_result == VK_ERROR_OUT_OF_DATE_KHR)
     {
@@ -752,30 +762,29 @@ void Renderer::update()
         return;
     }
 
-
     record_command_buffer(rendered_image_count);
-    VK_CHECK(vkResetFences(core.device, 1, &core.draw_fence));
+    VK_CHECK(vkResetFences(core.device, 1, &per_frame_data.render_fence));
 
     VkPipelineStageFlags stage_flags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit_info = {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &core.present_complete_semaphore,
+        .pWaitSemaphores = &per_frame_data.swapchain_semaphore,
         .pWaitDstStageMask = &stage_flags,
         .commandBufferCount = 1,
         .pCommandBuffers = &core.command_buffer,
         .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &core.render_finished_semaphore,
+        .pSignalSemaphores = &per_frame_data.render_semaphore,
     };
 
-    VK_CHECK(vkQueueSubmit(core.queue, 1, &submit_info, core.draw_fence));
+    VK_CHECK(vkQueueSubmit(core.queue, 1, &submit_info, per_frame_data.render_fence));
 
-    VK_CHECK(vkWaitForFences(core.device,1, &core.draw_fence, VK_TRUE, UINT64_MAX));
+    VK_CHECK(vkWaitForFences(core.device,1, &per_frame_data.render_fence, VK_TRUE, UINT64_MAX));
 
     VkPresentInfoKHR present_info = {
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &core.render_finished_semaphore,
+        .pWaitSemaphores = &per_frame_data.render_semaphore,
         .swapchainCount = 1,
         .pSwapchains = &core.swapchain,
         .pImageIndices = &rendered_image_count,

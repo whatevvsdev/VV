@@ -18,7 +18,7 @@ bool initalize_sdl()
         return false;
     }
 
-    sdl_window = SDL_CreateWindow( "VV", client_area_width, client_area_height, SDL_WINDOW_VULKAN);
+    sdl_window = SDL_CreateWindow( "VV", client_area_width, client_area_height, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
     if(sdl_window == nullptr)
     {
