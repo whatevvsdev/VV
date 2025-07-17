@@ -10,7 +10,6 @@ namespace Renderer::Core
 {
     struct PerFrameData
     {
-        VkSemaphore swapchain_semaphore { VK_NULL_HANDLE };
         VkSemaphore render_semaphore { VK_NULL_HANDLE };
         VkFence render_fence { VK_NULL_HANDLE };
         VkCommandBuffer command_buffer { VK_NULL_HANDLE };

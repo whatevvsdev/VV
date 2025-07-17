@@ -38,6 +38,7 @@ namespace Renderer::Core
         VkSwapchainKHR swapchain { VK_NULL_HANDLE };
         uint32_t last_swapchain_image_index { 0 };
         uint32_t current_swapchain_image_index { 0 };
+        VkSemaphore swapchain_semaphore { VK_NULL_HANDLE };
 
         VkCommandPool command_pool { VK_NULL_HANDLE };
 
@@ -359,10 +360,11 @@ namespace Renderer::Core
 
     void create_sync_objects()
     {
+        vkDestroySemaphore(internal.device, internal.swapchain_semaphore, nullptr);
+
         for (i32 i = 0; i < internal.swapchain_image_count; i++)
         {
             vkDestroySemaphore(internal.device, internal.per_frame_data[i].render_semaphore, nullptr);
-            vkDestroySemaphore(internal.device, internal.per_frame_data[i].swapchain_semaphore, nullptr);
             vkDestroyFence(internal.device, internal.per_frame_data[i].render_fence, nullptr);
         }
 
@@ -377,10 +379,11 @@ namespace Renderer::Core
             .flags = VK_FENCE_CREATE_SIGNALED_BIT,
         };
 
+        VK_CHECK(vkCreateSemaphore(internal.device, &semaphore_info, nullptr, &internal.swapchain_semaphore));
+
         for (i32 i = 0; i < internal.swapchain_image_count; i++)
         {
             auto& per_frame_data = internal.per_frame_data[i];
-            VK_CHECK(vkCreateSemaphore(internal.device, &semaphore_info, nullptr, &per_frame_data.swapchain_semaphore));
             VK_CHECK(vkCreateSemaphore(internal.device, &semaphore_info, nullptr, &per_frame_data.render_semaphore));
             VK_CHECK(vkCreateFence(internal.device, &fence_info, nullptr, &per_frame_data.render_fence));
         }
@@ -430,7 +433,7 @@ namespace Renderer::Core
         internal.last_swapchain_image_index = internal.current_swapchain_image_index;
         auto& last_per_frame_data = internal.per_frame_data[internal.last_swapchain_image_index];
 
-        VkResult acquire_image_result = vkAcquireNextImageKHR(internal.device, internal.swapchain, UINT64_MAX, last_per_frame_data.swapchain_semaphore, nullptr, &internal.current_swapchain_image_index);
+        VkResult acquire_image_result = vkAcquireNextImageKHR(internal.device, internal.swapchain, UINT64_MAX, internal.swapchain_semaphore, nullptr, &internal.current_swapchain_image_index);
         auto& per_frame_data = internal.per_frame_data[internal.current_swapchain_image_index];
 
         if (acquire_image_result == VK_ERROR_OUT_OF_DATE_KHR)
@@ -450,7 +453,7 @@ namespace Renderer::Core
         {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &per_frame_data.swapchain_semaphore,
+            .pWaitSemaphores = &internal.swapchain_semaphore,
             .pWaitDstStageMask = &stage_flags,
             .commandBufferCount = 1,
             .pCommandBuffers = &per_frame_data.command_buffer,

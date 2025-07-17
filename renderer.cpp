@@ -195,7 +195,7 @@ void transition_image_layout(VkCommandBuffer cmd_buffer, VkImage image, VkImageL
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
         .srcStageMask = src_stage_mask,
         .srcAccessMask = src_access_mask,
-        .dstStageMask = src_stage_mask,
+        .dstStageMask = dst_stage_mask,
         .dstAccessMask = dst_access_mask,
         .oldLayout = old_layout,
         .newLayout = new_layout,
