@@ -1,4 +1,5 @@
 ﻿#include "renderer.h"
+#include "renderer_core.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -8,10 +9,6 @@
 #include "io.h"
 
 #include <vulkan/vk_enum_string_helper.h>
-#include <vulkan/vulkan.h>
-
-#include "renderer_core.h"
-#include "SDL3/SDL_log.h"
 #include "SDL3/SDL_vulkan.h"
 
 struct
@@ -19,7 +16,6 @@ struct
     VkPipelineLayout pipeline_layout { VK_NULL_HANDLE };
     VkPipeline graphics_pipeline { VK_NULL_HANDLE };
 } state;
-
 
 VkShaderModule create_shader_module(const std::vector<u8>& bytecode)
 {
