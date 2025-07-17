@@ -231,9 +231,7 @@ void Renderer::update()
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
 
-    printf("prebegin\n");
     VK_CHECK(vkBeginCommandBuffer(per_frame_data.command_buffer, &command_buffer_begin_info));
-    printf("postbegin\n");
 
     transition_image_layout(per_frame_data.command_buffer,
         per_frame_data.swapchain_image,
