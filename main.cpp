@@ -49,6 +49,8 @@ int main( int argc, char* args[] )
 
             Renderer::update();
         }
+
+        Renderer::terminate();
     }
     else
     {

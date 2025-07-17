@@ -1,6 +1,15 @@
 ﻿#pragma once
 #include <cstdint>
 
+#define VK_CHECK(x)                                        \
+do {                                                       \
+VkResult err = x;                                          \
+if (err) {                                                 \
+printf("Detected Vulkan error: %s", string_VkResult(err)); \
+abort();                                                   \
+}                                                          \
+} while (0)
+
 typedef uint8_t		u8;
 typedef uint16_t	u16;
 typedef uint32_t	u32;

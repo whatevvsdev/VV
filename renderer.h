@@ -2,7 +2,7 @@
 
 struct SDL_Window;
 
-#define RENDERER_DEBUG 1
+
 
 namespace Renderer
 {

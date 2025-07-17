@@ -11,7 +11,9 @@ add_executable(VV main.cpp
         Renderer.h
         types.h
         io.cpp
-        io.h)
+        io.h
+        vk_renderer_core.cpp
+        renderer_core.h)
 
 add_subdirectory(lib)
 
