@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdio>
 #include <vector>
+#include <deque>
+#include <functional>
 
 #include "types.h"
 #include "io.h"
@@ -12,6 +14,14 @@
 
 #include "SDL3/SDL_log.h"
 #include "SDL3/SDL_vulkan.h"
+
+enum DeletionQueueLifetime
+{
+    Core,
+    Swapchain,
+    RANGE
+};
+#include "deletion_queue.h"
 
 #define VK_PROC_ADDR_LOAD(string_name) reinterpret_cast<PFN_##string_name>(vkGetInstanceProcAddr(internal.instance, #string_name))
 
@@ -130,6 +140,7 @@ namespace Renderer::Core
         instance_create_info.ppEnabledExtensionNames = instance_extensions.data();
 
         VK_CHECK(vkCreateInstance(&instance_create_info, nullptr, &internal.instance));
+        QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroyInstance(internal.instance, nullptr));
     }
 
     VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity, VkDebugUtilsMessageTypeFlagsEXT message_type, const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void*)
@@ -150,6 +161,7 @@ namespace Renderer::Core
         };
 
         VK_PROC_ADDR_LOAD(vkCreateDebugUtilsMessengerEXT)(internal.instance, &messenger_create_info, nullptr, &internal.debug_messenger);
+        QUEUE_DELETE(DeletionQueueLifetime::Core, VK_PROC_ADDR_LOAD(vkDestroyDebugUtilsMessengerEXT)(internal.instance, internal.debug_messenger, nullptr));
 #endif
     }
 
@@ -188,6 +200,7 @@ namespace Renderer::Core
         device_create_info.ppEnabledExtensionNames = device_extensions.data();
 
         VK_CHECK(vkCreateDevice(internal.physical_device, &device_create_info, nullptr, &internal.device));
+        QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroyDevice(internal.device, nullptr))
         vkGetDeviceQueue(internal.device, internal.queue_family_index, 0, &internal.queue);
     }
 
@@ -240,15 +253,12 @@ namespace Renderer::Core
     {
         if(!SDL_Vulkan_CreateSurface(internal.window_ptr, internal.instance, nullptr, &internal.surface))
             SDL_Log( "Window surface could not be created! SDL error: %s\n", SDL_GetError() );
+
+        QUEUE_DELETE(DeletionQueueLifetime::Core, SDL_Vulkan_DestroySurface(internal.instance, internal.surface, nullptr))
     }
 
     void create_swapchain_image_views()
     {
-        for (i32 i = 0; i < internal.swapchain_image_count; i++)
-        {
-            vkDestroyImageView(internal.device, internal.per_frame_data[i].swapchain_image_view, nullptr);
-        }
-
         VkImageViewCreateInfo swapchain_image_view_create_info
         {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -262,13 +272,12 @@ namespace Renderer::Core
             auto& per_frame_data = internal.per_frame_data[i];
             swapchain_image_view_create_info.image = per_frame_data.swapchain_image;
             VK_CHECK(vkCreateImageView(internal.device, &swapchain_image_view_create_info, nullptr, &per_frame_data.swapchain_image_view));
+            QUEUE_DELETE(DeletionQueueLifetime::Swapchain, vkDestroyImageView(internal.device, per_frame_data.swapchain_image_view, nullptr));
         }
     }
 
     void create_swapchain()
     {
-        vkDestroySwapchainKHR(internal.device, internal.swapchain, nullptr);
-
         VkSurfaceCapabilitiesKHR surface_capabilities;
         VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(internal.physical_device, internal.surface, &surface_capabilities));
 
@@ -319,14 +328,13 @@ namespace Renderer::Core
         };
 
         VK_CHECK(vkCreateSwapchainKHR(internal.device, &swapchain_create_info, nullptr, &internal.swapchain));
+        QUEUE_DELETE(DeletionQueueLifetime::Swapchain, vkDestroySwapchainKHR(internal.device, internal.swapchain, nullptr));
 
         std::vector<VkImage> swapchain_images(internal.swapchain_image_count);
         VK_CHECK(vkGetSwapchainImagesKHR(internal.device, internal.swapchain, &internal.swapchain_image_count, swapchain_images.data()));
 
         for (i32 i = 0; i < internal.swapchain_image_count; i++)
             internal.per_frame_data[i].swapchain_image = swapchain_images[i];
-
-        create_swapchain_image_views();
     }
 
     void create_command_pool()
@@ -338,6 +346,7 @@ namespace Renderer::Core
         };
 
         VK_CHECK(vkCreateCommandPool(internal.device, &command_pool_create_info, nullptr, &internal.command_pool));
+        QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroyCommandPool(internal.device, internal.command_pool, nullptr));
     }
 
     void create_command_buffers()
@@ -355,19 +364,14 @@ namespace Renderer::Core
         VK_CHECK(vkAllocateCommandBuffers(internal.device, &command_buffer_allocate_info, command_buffers));
 
         for (i32 i = 0; i < internal.swapchain_image_count; i++)
+        {
             internal.per_frame_data[i].command_buffer = command_buffers[i];
+            QUEUE_DELETE(DeletionQueueLifetime::Swapchain, vkFreeCommandBuffers(internal.device, internal.command_pool, 1, &internal.per_frame_data[i].command_buffer))
+        }
     }
 
     void create_sync_objects()
     {
-        vkDestroySemaphore(internal.device, internal.swapchain_semaphore, nullptr);
-
-        for (i32 i = 0; i < internal.swapchain_image_count; i++)
-        {
-            vkDestroySemaphore(internal.device, internal.per_frame_data[i].render_semaphore, nullptr);
-            vkDestroyFence(internal.device, internal.per_frame_data[i].render_fence, nullptr);
-        }
-
         VkSemaphoreCreateInfo semaphore_info
         {
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -380,12 +384,16 @@ namespace Renderer::Core
         };
 
         VK_CHECK(vkCreateSemaphore(internal.device, &semaphore_info, nullptr, &internal.swapchain_semaphore));
+        QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroySemaphore(internal.device, internal.swapchain_semaphore, nullptr))
 
         for (i32 i = 0; i < internal.swapchain_image_count; i++)
         {
             auto& per_frame_data = internal.per_frame_data[i];
             VK_CHECK(vkCreateSemaphore(internal.device, &semaphore_info, nullptr, &per_frame_data.render_semaphore));
             VK_CHECK(vkCreateFence(internal.device, &fence_info, nullptr, &per_frame_data.render_fence));
+            QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroySemaphore(internal.device, per_frame_data.render_semaphore, nullptr))
+            QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroyFence(internal.device, per_frame_data.render_fence, nullptr))
+
         }
     }
 
@@ -393,11 +401,13 @@ namespace Renderer::Core
     {
         // Wait until the device is idle to safely destroy resources
         vkDeviceWaitIdle(internal.device);
+
+        deletion_queues[DeletionQueueLifetime::Swapchain].flush();
         vkDestroySwapchainKHR(internal.device, internal.swapchain, nullptr);
 
-        // Recreate the swapchain and dependent resources
+        // Recreate the swapchain
         create_swapchain();
-
+        create_swapchain_image_views();
         create_command_buffers();
     }
 
@@ -422,10 +432,11 @@ namespace Renderer::Core
 
     void terminate()
     {
-        // TODO: Replace this with a deletion queue
-        vkDestroySurfaceKHR(internal.instance, internal.surface, nullptr);
-        vkDestroyDevice(internal.device, nullptr);
-        vkDestroyInstance(internal.instance, nullptr);
+        // Wait until the device is idle to safely destroy resources
+        vkDeviceWaitIdle(internal.device);
+
+        deletion_queues[DeletionQueueLifetime::Swapchain].flush();
+        deletion_queues[DeletionQueueLifetime::Core].flush();
     }
 
     const PerFrameData& begin_frame()

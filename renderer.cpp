@@ -11,6 +11,13 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include "SDL3/SDL_vulkan.h"
 
+enum DeletionQueueLifetime
+{
+    Core,
+    RANGE
+};
+#include "deletion_queue.h"
+
 struct
 {
     VkPipelineLayout pipeline_layout { VK_NULL_HANDLE };
@@ -175,6 +182,11 @@ void create_graphics_pipeline()
     };
 
     VK_CHECK(vkCreateGraphicsPipelines(Renderer::Core::get_logical_device(), nullptr, 1, &graphics_pipeline_create_info, nullptr, &state.graphics_pipeline ));
+
+    QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroyPipelineLayout(Renderer::Core::get_logical_device(), state.pipeline_layout, nullptr));
+    QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroyPipeline(Renderer::Core::get_logical_device(), state.graphics_pipeline, nullptr));
+    vkDestroyShaderModule(Renderer::Core::get_logical_device(), vert_shader_module, nullptr);
+    vkDestroyShaderModule(Renderer::Core::get_logical_device(), frag_shader_module, nullptr);
 }
 
 void Renderer::initialize(SDL_Window* sdl_window_ptr)
@@ -285,9 +297,10 @@ void Renderer::update()
     Renderer::Core::end_frame();
 }
 
-
 void Renderer::terminate()
 {
+    deletion_queues[DeletionQueueLifetime::Core].flush();
+
     Renderer::Core::terminate();
 }
 

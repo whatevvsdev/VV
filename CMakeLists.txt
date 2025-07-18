@@ -13,7 +13,9 @@ add_executable(VV main.cpp
         io.cpp
         io.h
         vk_renderer_core.cpp
-        renderer_core.h)
+        renderer_core.h
+        deletion_queue.h
+)
 
 add_subdirectory(lib)
 
