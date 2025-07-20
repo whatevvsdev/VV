@@ -11,8 +11,8 @@
 
 enum DeletionQueueLifetime
 {
-    Core,
-    Swapchain,
+    CORE,
+    SWAPCHAIN,
     RANGE
 };
 #include "deletion_queue.h"

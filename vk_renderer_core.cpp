@@ -15,15 +15,16 @@
 #include "SDL3/SDL_log.h"
 #include "SDL3/SDL_vulkan.h"
 
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+
 enum DeletionQueueLifetime
 {
-    Core,
-    Swapchain,
+    CORE,
+    SWAPCHAIN,
     RANGE
 };
 #include "deletion_queue.h"
-
-#define VK_PROC_ADDR_LOAD(string_name) reinterpret_cast<PFN_##string_name>(vkGetInstanceProcAddr(internal.instance, #string_name))
 
 namespace Renderer::Core
 {
@@ -32,6 +33,7 @@ namespace Renderer::Core
         SDL_Window* window_ptr { nullptr };
 
         VkInstance instance { VK_NULL_HANDLE };
+        VmaAllocator allocator { VK_NULL_HANDLE };
 
         VkDebugUtilsMessengerEXT debug_messenger { VK_NULL_HANDLE };
 
@@ -72,6 +74,7 @@ namespace Renderer::Core
         VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
         VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,
         VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
     };
 
     // Internal Functions
@@ -140,7 +143,7 @@ namespace Renderer::Core
         instance_create_info.ppEnabledExtensionNames = instance_extensions.data();
 
         VK_CHECK(vkCreateInstance(&instance_create_info, nullptr, &internal.instance));
-        QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroyInstance(internal.instance, nullptr));
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroyInstance(internal.instance, nullptr));
     }
 
     VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity, VkDebugUtilsMessageTypeFlagsEXT message_type, const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void*)
@@ -161,7 +164,7 @@ namespace Renderer::Core
         };
 
         VK_PROC_ADDR_LOAD(vkCreateDebugUtilsMessengerEXT)(internal.instance, &messenger_create_info, nullptr, &internal.debug_messenger);
-        QUEUE_DELETE(DeletionQueueLifetime::Core, VK_PROC_ADDR_LOAD(vkDestroyDebugUtilsMessengerEXT)(internal.instance, internal.debug_messenger, nullptr));
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, VK_PROC_ADDR_LOAD(vkDestroyDebugUtilsMessengerEXT)(internal.instance, internal.debug_messenger, nullptr));
 #endif
     }
 
@@ -179,7 +182,14 @@ namespace Renderer::Core
             .synchronization2 = VK_TRUE
         };
 
+        VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features
+        {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
+            .bufferDeviceAddress = VK_TRUE,
+        };
+
         dynamic_rendering_feature.pNext = &synchronization2_features;
+        synchronization2_features.pNext = &buffer_device_address_features;
 
         VkDeviceCreateInfo device_create_info{};
         device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -200,7 +210,7 @@ namespace Renderer::Core
         device_create_info.ppEnabledExtensionNames = device_extensions.data();
 
         VK_CHECK(vkCreateDevice(internal.physical_device, &device_create_info, nullptr, &internal.device));
-        QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroyDevice(internal.device, nullptr))
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroyDevice(internal.device, nullptr))
         vkGetDeviceQueue(internal.device, internal.queue_family_index, 0, &internal.queue);
     }
 
@@ -249,12 +259,26 @@ namespace Renderer::Core
         }
     }
 
+    void create_vma_allocator()
+    {
+        VmaAllocatorCreateInfo allocator_create_info
+        {
+            .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+            .physicalDevice = internal.physical_device,
+            .device = internal.device,
+            .instance = internal.instance,
+        };
+
+        VK_CHECK(vmaCreateAllocator(&allocator_create_info, &internal.allocator));
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vmaDestroyAllocator(internal.allocator))
+    }
+
     void create_sdl_surface()
     {
         if(!SDL_Vulkan_CreateSurface(internal.window_ptr, internal.instance, nullptr, &internal.surface))
             SDL_Log( "Window surface could not be created! SDL error: %s\n", SDL_GetError() );
 
-        QUEUE_DELETE(DeletionQueueLifetime::Core, SDL_Vulkan_DestroySurface(internal.instance, internal.surface, nullptr))
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, SDL_Vulkan_DestroySurface(internal.instance, internal.surface, nullptr))
     }
 
     void create_swapchain_image_views()
@@ -272,7 +296,7 @@ namespace Renderer::Core
             auto& per_frame_data = internal.per_frame_data[i];
             swapchain_image_view_create_info.image = per_frame_data.swapchain_image;
             VK_CHECK(vkCreateImageView(internal.device, &swapchain_image_view_create_info, nullptr, &per_frame_data.swapchain_image_view));
-            QUEUE_DELETE(DeletionQueueLifetime::Swapchain, vkDestroyImageView(internal.device, per_frame_data.swapchain_image_view, nullptr));
+            QUEUE_DELETE(DeletionQueueLifetime::SWAPCHAIN, vkDestroyImageView(internal.device, per_frame_data.swapchain_image_view, nullptr));
         }
     }
 
@@ -318,7 +342,7 @@ namespace Renderer::Core
             .imageColorSpace = internal.swapchain_data.surface_format.colorSpace,
             .imageExtent = internal.swapchain_data.surface_extent,
             .imageArrayLayers = 1,
-            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
             .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
             .preTransform = surface_capabilities.currentTransform,
             .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
@@ -328,7 +352,7 @@ namespace Renderer::Core
         };
 
         VK_CHECK(vkCreateSwapchainKHR(internal.device, &swapchain_create_info, nullptr, &internal.swapchain));
-        QUEUE_DELETE(DeletionQueueLifetime::Swapchain, vkDestroySwapchainKHR(internal.device, internal.swapchain, nullptr));
+        QUEUE_DELETE(DeletionQueueLifetime::SWAPCHAIN, vkDestroySwapchainKHR(internal.device, internal.swapchain, nullptr));
 
         std::vector<VkImage> swapchain_images(internal.swapchain_image_count);
         VK_CHECK(vkGetSwapchainImagesKHR(internal.device, internal.swapchain, &internal.swapchain_image_count, swapchain_images.data()));
@@ -346,7 +370,7 @@ namespace Renderer::Core
         };
 
         VK_CHECK(vkCreateCommandPool(internal.device, &command_pool_create_info, nullptr, &internal.command_pool));
-        QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroyCommandPool(internal.device, internal.command_pool, nullptr));
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroyCommandPool(internal.device, internal.command_pool, nullptr));
     }
 
     void create_command_buffers()
@@ -366,7 +390,7 @@ namespace Renderer::Core
         for (i32 i = 0; i < internal.swapchain_image_count; i++)
         {
             internal.per_frame_data[i].command_buffer = command_buffers[i];
-            QUEUE_DELETE(DeletionQueueLifetime::Swapchain, vkFreeCommandBuffers(internal.device, internal.command_pool, 1, &internal.per_frame_data[i].command_buffer))
+            QUEUE_DELETE(DeletionQueueLifetime::SWAPCHAIN, vkFreeCommandBuffers(internal.device, internal.command_pool, 1, &internal.per_frame_data[i].command_buffer))
         }
     }
 
@@ -384,16 +408,15 @@ namespace Renderer::Core
         };
 
         VK_CHECK(vkCreateSemaphore(internal.device, &semaphore_info, nullptr, &internal.swapchain_semaphore));
-        QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroySemaphore(internal.device, internal.swapchain_semaphore, nullptr))
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroySemaphore(internal.device, internal.swapchain_semaphore, nullptr))
 
         for (i32 i = 0; i < internal.swapchain_image_count; i++)
         {
             auto& per_frame_data = internal.per_frame_data[i];
             VK_CHECK(vkCreateSemaphore(internal.device, &semaphore_info, nullptr, &per_frame_data.render_semaphore));
             VK_CHECK(vkCreateFence(internal.device, &fence_info, nullptr, &per_frame_data.render_fence));
-            QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroySemaphore(internal.device, per_frame_data.render_semaphore, nullptr))
-            QUEUE_DELETE(DeletionQueueLifetime::Core, vkDestroyFence(internal.device, per_frame_data.render_fence, nullptr))
-
+            QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroySemaphore(internal.device, per_frame_data.render_semaphore, nullptr))
+            QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroyFence(internal.device, per_frame_data.render_fence, nullptr))
         }
     }
 
@@ -402,13 +425,67 @@ namespace Renderer::Core
         // Wait until the device is idle to safely destroy resources
         vkDeviceWaitIdle(internal.device);
 
-        deletion_queues[DeletionQueueLifetime::Swapchain].flush();
+        deletion_queues[DeletionQueueLifetime::SWAPCHAIN].flush();
         vkDestroySwapchainKHR(internal.device, internal.swapchain, nullptr);
 
         // Recreate the swapchain
         create_swapchain();
         create_swapchain_image_views();
         create_command_buffers();
+    }
+
+    AllocatedImage create_image(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage_flags, VkImageAspectFlags aspect_flags, const std::string& name)
+    {
+        AllocatedImage new_image {};
+
+        VkImageCreateInfo image_create_info
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = format,
+            .extent = VkExtent3D(extent.width, extent.height, 1),
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = usage_flags,
+        };
+
+        VmaAllocationCreateInfo allocation_create_info
+        {
+            .usage = VMA_MEMORY_USAGE_AUTO,
+            .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        };
+
+        VK_CHECK(vmaCreateImage(internal.allocator, &image_create_info, &allocation_create_info, &new_image.image, &new_image.allocation, nullptr));
+        if (!name.empty())
+            VK_NAME(new_image.image, VK_OBJECT_TYPE_IMAGE, name);
+
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vmaDestroyImage(internal.allocator, new_image.image, new_image.allocation));
+
+        VkImageViewCreateInfo image_view_create_info
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = new_image.image,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = format,
+            .subresourceRange =
+            {
+                .aspectMask = aspect_flags,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            }
+        };
+
+        VK_CHECK(vkCreateImageView(Renderer::Core::get_logical_device(), &image_view_create_info, nullptr, &new_image.view));
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroyImageView(internal.device, new_image.view, nullptr));
+
+        new_image.format = format;
+        new_image.extent = VkExtent3D(extent.width, extent.height, 1);
+
+        return new_image;
     }
 
     void initialize(SDL_Window* sdl_window_ptr)
@@ -421,6 +498,7 @@ namespace Renderer::Core
 
         select_vulkan_physical_device();
         create_vulkan_device();
+        create_vma_allocator();
 
         create_swapchain();
         create_swapchain_image_views();
@@ -435,8 +513,8 @@ namespace Renderer::Core
         // Wait until the device is idle to safely destroy resources
         vkDeviceWaitIdle(internal.device);
 
-        deletion_queues[DeletionQueueLifetime::Swapchain].flush();
-        deletion_queues[DeletionQueueLifetime::Core].flush();
+        deletion_queues[DeletionQueueLifetime::SWAPCHAIN].flush();
+        deletion_queues[DeletionQueueLifetime::CORE].flush();
     }
 
     const PerFrameData& begin_frame()
@@ -457,6 +535,7 @@ namespace Renderer::Core
     {
         auto& per_frame_data = internal.per_frame_data[internal.current_swapchain_image_index];
 
+        VK_CHECK(vkEndCommandBuffer(per_frame_data.command_buffer));
         VK_CHECK(vkResetFences(internal.device, 1, &per_frame_data.render_fence));
 
         VkPipelineStageFlags stage_flags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;

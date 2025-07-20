@@ -22,11 +22,11 @@ add_subdirectory(lib)
 add_subdirectory(shaders)
 add_dependencies(VV CompileShaders)
 
-target_link_libraries(VV PRIVATE SDL3::SDL3)
-
 # Add Vulkan
 set(VULKAN_SDK $ENV{VULKAN_SDK})
 set(CMAKE_PREFIX_PATH "${VULKAN_SDK}")
 
 find_package(Vulkan REQUIRED)
 target_link_libraries(VV PRIVATE Vulkan::Vulkan)
+target_link_libraries(VV PRIVATE SDL3::SDL3)
+target_link_libraries(VV PRIVATE VulkanMemoryAllocator)
