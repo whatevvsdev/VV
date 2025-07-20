@@ -4,9 +4,11 @@ struct SDL_Window;
 
 #define RENDERER_DEBUG 1
 
+#define VK_NO_PROTOTYPES
 #include <vulkan/vulkan_core.h>
 #include "vk_mem_alloc.h"
 #include <string>
+#include "types.h"
 
 #define VK_PROC_ADDR_LOAD(string_name) reinterpret_cast<PFN_##string_name>(vkGetInstanceProcAddr(internal.instance, #string_name))
 
@@ -22,6 +24,11 @@ struct SDL_Window;
     VK_PROC_ADDR_LOAD(vkSetDebugUtilsObjectNameEXT)(internal.device, &name_info); \
 }
 
+inline u32 aligned_size(u32 value, u32 alignment)
+{
+    return (value + alignment - 1) & ~(alignment - 1);
+}
+
 namespace Renderer
 {
     struct PerFrameData
@@ -32,6 +39,12 @@ namespace Renderer
 
         VkImage swapchain_image { VK_NULL_HANDLE };
         VkImageView swapchain_image_view { VK_NULL_HANDLE };
+    };
+
+    struct PhysicalDeviceProperties
+    {
+        VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_properties;
+        VkPhysicalDeviceProperties2 properties;
     };
 
     struct SwapchainData
@@ -60,6 +73,8 @@ namespace Renderer
         void end_frame();
 
         VkDevice get_logical_device();
-        const SwapchainData&  get_swapchain_data();
+        const SwapchainData& get_swapchain_data();
+        const PhysicalDeviceProperties& get_physical_device_properties();
+        const VmaAllocator& get_vma_allocator();
     }
 }

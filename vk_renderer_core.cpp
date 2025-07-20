@@ -9,8 +9,10 @@
 #include "types.h"
 #include "io.h"
 
-#include <vulkan/vk_enum_string_helper.h>
-#include <vulkan/vulkan.h>
+#define VOLK_IMPLEMENTATION
+#include "volk.h"
+
+#include "vv_vulkan.h"
 
 #include "SDL3/SDL_log.h"
 #include "SDL3/SDL_vulkan.h"
@@ -38,8 +40,8 @@ namespace Renderer::Core
         VkDebugUtilsMessengerEXT debug_messenger { VK_NULL_HANDLE };
 
         VkPhysicalDevice physical_device { VK_NULL_HANDLE };
-        VkPhysicalDeviceDescriptorBufferPropertiesEXT physical_device_descriptor_buffer_properties;
-        VkPhysicalDeviceProperties2 physical_device_properties;
+        PhysicalDeviceProperties physical_device_properties;
+
         VkDevice device { VK_NULL_HANDLE };
         VkQueue queue { VK_NULL_HANDLE };
         u32 queue_family_index { 0 }; // Supports Presentation, Graphics and Compute (and Transfer implicitly)
@@ -72,11 +74,6 @@ namespace Renderer::Core
 
     std::vector<const char*> device_extensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_KHR_SPIRV_1_4_EXTENSION_NAME,
-        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
-        VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,
-        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
         VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
     };
 
@@ -117,6 +114,8 @@ namespace Renderer::Core
 
     void create_vulkan_instance()
     {
+
+
         VkApplicationInfo application_info
         {
             .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -191,8 +190,15 @@ namespace Renderer::Core
             .bufferDeviceAddress = VK_TRUE,
         };
 
+        VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features
+        {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT,
+            .descriptorBuffer = VK_TRUE,
+        };
+
         dynamic_rendering_feature.pNext = &synchronization2_features;
         synchronization2_features.pNext = &buffer_device_address_features;
+        buffer_device_address_features.pNext = &descriptor_buffer_features;
 
         VkDeviceCreateInfo device_create_info{};
         device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -257,8 +263,8 @@ namespace Renderer::Core
                 if ((flags & VK_QUEUE_GRAPHICS_BIT) && (flags & VK_QUEUE_COMPUTE_BIT) && is_presentation_supported)
                 {
                     internal.physical_device = physical_devices[i];
-                    internal.physical_device_descriptor_buffer_properties = descriptor_buffer_properties[i];
-                    internal.physical_device_properties = device_properties[i];
+                    internal.physical_device_properties.descriptor_buffer_properties = descriptor_buffer_properties[i];
+                    internal.physical_device_properties.properties = device_properties[i];
                     internal.queue_family_index = f;
 
                     printf("Found and picked device with name: %s\n", device_properties[i].properties.deviceName);
@@ -270,11 +276,18 @@ namespace Renderer::Core
 
     void create_vma_allocator()
     {
+        VmaVulkanFunctions vma_vulkan_functions
+        {
+            .vkGetInstanceProcAddr = vkGetInstanceProcAddr,
+            .vkGetDeviceProcAddr = vkGetDeviceProcAddr,
+        };
+
         VmaAllocatorCreateInfo allocator_create_info
         {
             .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
             .physicalDevice = internal.physical_device,
             .device = internal.device,
+            .pVulkanFunctions = &vma_vulkan_functions,
             .instance = internal.instance,
         };
 
@@ -499,7 +512,10 @@ namespace Renderer::Core
 
     void initialize(SDL_Window* sdl_window_ptr)
     {
+        VK_CHECK(volkInitialize());
         create_vulkan_instance();
+        volkLoadInstance(internal.instance);
+
         create_debug_messenger();
 
         internal.window_ptr = sdl_window_ptr;
@@ -587,5 +603,15 @@ namespace Renderer::Core
     const SwapchainData& get_swapchain_data()
     {
         return internal.swapchain_data;
+    }
+
+    const PhysicalDeviceProperties& get_physical_device_properties()
+    {
+        return internal.physical_device_properties;
+    }
+
+    const VmaAllocator& get_vma_allocator()
+    {
+        return internal.allocator;
     }
 }
