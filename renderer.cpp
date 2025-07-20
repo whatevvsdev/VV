@@ -141,6 +141,7 @@
 
         // Create a buffer to hold the set
         VK_CHECK(vmaCreateBuffer(Renderer::Core::get_vma_allocator(), &buffer_create_info, &vma_create_info, &state.draw_image_descriptor_buffer, &state.draw_image_descriptor_buffer_allocation, nullptr));
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vmaDestroyBuffer(Renderer::Core::get_vma_allocator(), state.draw_image_descriptor_buffer, state.draw_image_descriptor_buffer_allocation));
 
         VkDescriptorImageInfo image_descriptor{};
         image_descriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
