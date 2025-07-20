@@ -142,29 +142,15 @@
         // Create a buffer to hold the set
         VK_CHECK(vmaCreateBuffer(Renderer::Core::get_vma_allocator(), &buffer_create_info, &vma_create_info, &state.draw_image_descriptor_buffer, &state.draw_image_descriptor_buffer_allocation, nullptr));
 
-        VkSamplerCreateInfo sampler_create_info =
-        {
-            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-            .magFilter = VK_FILTER_LINEAR,
-            .minFilter = VK_FILTER_LINEAR,
-            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-            .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-            .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        };
-
-        VK_CHECK(vkCreateSampler(Renderer::Core::get_logical_device(), &sampler_create_info, nullptr, &state.draw_image_sampler));
-        QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroySampler(Renderer::Core::get_logical_device(), state.draw_image_sampler, nullptr));
-
         VkDescriptorImageInfo image_descriptor{};
         image_descriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
         image_descriptor.imageView = state.draw_image.view;
-        image_descriptor.sampler = state.draw_image_sampler;
+        image_descriptor.sampler = VK_NULL_HANDLE;//state.draw_image_sampler;
 
         VkDescriptorGetInfoEXT image_descriptor_info
         {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-            .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
         };
 
         image_descriptor_info.data.pCombinedImageSampler = &image_descriptor;
@@ -174,7 +160,7 @@
 
         vkGetDescriptorEXT(Renderer::Core::get_logical_device(), &image_descriptor_info, descriptor_buffer_properties.combinedImageSamplerDescriptorSize, mapped_ptr);
 
-        //vmaUnmapMemory(Renderer::Core::get_vma_allocator(), state.draw_image_descriptor_buffer_allocation);
+        vmaUnmapMemory(Renderer::Core::get_vma_allocator(), state.draw_image_descriptor_buffer_allocation);
 
         VkPipelineLayoutCreateInfo computeLayout{};
         computeLayout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
