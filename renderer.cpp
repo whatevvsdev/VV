@@ -13,6 +13,7 @@
     #include "vv_vulkan.h"
     #include <vulkan/vk_enum_string_helper.h>
 
+#include "imgui.h"
     #include "SDL3/SDL_vulkan.h"
 
     enum DeletionQueueLifetime
@@ -49,6 +50,7 @@
 
         VkDescriptorSetLayout set;
         VK_CHECK(vkCreateDescriptorSetLayout(device, &info, nullptr, &set));
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroyDescriptorSetLayout(device, set, nullptr));
 
         return set;
     }
@@ -170,6 +172,7 @@
         computeLayout.setLayoutCount = 1;
 
         VK_CHECK(vkCreatePipelineLayout(Renderer::Core::get_logical_device(), &computeLayout, nullptr, &state.compute_pipeline_layout));
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroyPipelineLayout(Renderer::Core::get_logical_device(), state.compute_pipeline_layout, nullptr));
 
         VkPipelineShaderStageCreateInfo stageinfo{};
         stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -186,6 +189,7 @@
         computePipelineCreateInfo.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
 
         VK_CHECK(vkCreateComputePipelines(Renderer::Core::get_logical_device(), nullptr, 1, &computePipelineCreateInfo, nullptr, &state.compute_pipeline))  ;
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, vkDestroyPipeline(Renderer::Core::get_logical_device(), state.compute_pipeline, nullptr));
         vkDestroyShaderModule(Renderer::Core::get_logical_device(), comp_shader_module, nullptr);
     }
 
@@ -272,15 +276,6 @@
         auto per_frame_data = Renderer::Core::begin_frame();
         auto swapchain_data = Renderer::Core::get_swapchain_data();
 
-        VkCommandBufferBeginInfo command_buffer_begin_info
-        {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        };
-
-        VK_CHECK(vkBeginCommandBuffer(per_frame_data.command_buffer, &command_buffer_begin_info));
-
-
         transition_image_layout(per_frame_data.command_buffer,
            per_frame_data.swapchain_image,
            VK_IMAGE_LAYOUT_UNDEFINED,
@@ -350,6 +345,8 @@
            VK_PIPELINE_STAGE_2_TRANSFER_BIT,
            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
        );
+
+        ImGui::ShowDemoWindow();
 
         Renderer::Core::end_frame();
     }

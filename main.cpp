@@ -5,6 +5,8 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "imgui_impl_sdl3.h"
+
 constexpr int client_area_width { 1280 };
 constexpr int client_area_height { 720 };
 
@@ -43,6 +45,8 @@ int main( int argc, char* args[] )
         {
             while(SDL_PollEvent( &e ))
             {
+                ImGui_ImplSDL3_ProcessEvent(&e);
+
                 if(e.type == SDL_EVENT_QUIT)
                     quit = true;
             }

@@ -17,6 +17,10 @@
 #include "SDL3/SDL_log.h"
 #include "SDL3/SDL_vulkan.h"
 
+#include "imgui.h"
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_vulkan.h"
+
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 
@@ -59,6 +63,7 @@ namespace Renderer::Core
         VkCommandPool command_pool { VK_NULL_HANDLE };
 
         PerFrameData* per_frame_data { nullptr };
+
     } internal;
 
     const std::vector<const char*> validation_layers = {
@@ -303,6 +308,55 @@ namespace Renderer::Core
         QUEUE_DELETE(DeletionQueueLifetime::CORE, SDL_Vulkan_DestroySurface(internal.instance, internal.surface, nullptr))
     }
 
+    void initalize_imgui()
+    {
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, ImGui::DestroyContext());
+
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        ImGui_ImplSDL3_InitForVulkan(internal.window_ptr);
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, ImGui_ImplSDL3_Shutdown());
+
+        VkFormat color_format = internal.swapchain_data.surface_format.format;
+        VkPipelineRenderingCreateInfoKHR pipeline_rendering_info
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+            .colorAttachmentCount = 1,
+            .pColorAttachmentFormats = &color_format,
+        };
+
+        auto check_vk_result([](VkResult err)
+        {
+        if (err == VK_SUCCESS)
+            return;
+            fprintf(stdout, "[vulkan] Error: VkResult = %d\n", err);
+            if (err < 0)
+                abort();
+                });
+
+        ImGui_ImplVulkan_InitInfo imgui_vulkan_init_info
+        {
+            .ApiVersion = VK_API_VERSION_1_4,
+            .Instance = internal.instance,
+            .PhysicalDevice = internal.physical_device,
+            .Device = internal.device,
+            .QueueFamily = internal.queue_family_index,
+            .Queue = internal.queue,
+            .RenderPass = VK_NULL_HANDLE,
+            .MinImageCount = internal.swapchain_image_count,
+            .ImageCount = internal.swapchain_image_count,
+            .DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE * 4,
+            .UseDynamicRendering = true,
+            .PipelineRenderingCreateInfo = pipeline_rendering_info,
+            .CheckVkResultFn = check_vk_result,
+        };
+
+        ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_4, [](const char* function_name, void*) { return vkGetInstanceProcAddr(internal.instance, function_name); });
+        ImGui_ImplVulkan_Init(&imgui_vulkan_init_info);
+        QUEUE_DELETE(DeletionQueueLifetime::CORE, ImGui_ImplVulkan_Shutdown());
+    }
+
     void create_swapchain_image_views()
     {
         VkImageViewCreateInfo swapchain_image_view_create_info
@@ -523,6 +577,8 @@ namespace Renderer::Core
 
         select_vulkan_physical_device();
         create_vulkan_device();
+        volkLoadDevice(internal.device);
+
         create_vma_allocator();
 
         create_swapchain();
@@ -531,11 +587,11 @@ namespace Renderer::Core
         create_command_pool();
         create_command_buffers();
         create_sync_objects();
+        initalize_imgui();
     }
 
     void terminate()
     {
-        // Wait until the device is idle to safely destroy resources
         vkDeviceWaitIdle(internal.device);
 
         deletion_queues[DeletionQueueLifetime::SWAPCHAIN].flush();
@@ -553,12 +609,53 @@ namespace Renderer::Core
         if (acquire_image_result == VK_ERROR_OUT_OF_DATE_KHR)
             resize_swapchain();
 
+        VkCommandBufferBeginInfo command_buffer_begin_info
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        };
+
+        VK_CHECK(vkBeginCommandBuffer(per_frame_data.command_buffer, &command_buffer_begin_info));
+
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+
         return per_frame_data;
     }
 
     void end_frame()
     {
         auto& per_frame_data = internal.per_frame_data[internal.current_swapchain_image_index];
+
+        ImGui::Render();
+
+
+        VkRenderingAttachmentInfo color_attachment_info = {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = per_frame_data.swapchain_image_view,
+            .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .clearValue = { .color = { 0.1f, 0.1f, 0.1f, 1.0f } },
+        };
+
+        VkRenderingInfo rendering_info = {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .renderArea = { {0, 0}, internal.swapchain_data.surface_extent },
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &color_attachment_info,
+        };
+
+        //Begin rendering before calling ImGui render draw
+        vkCmdBeginRendering(per_frame_data.command_buffer, &rendering_info);
+
+        // Draw ImGui
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), per_frame_data.command_buffer);
+
+        // End rendering
+        vkCmdEndRendering(per_frame_data.command_buffer);
 
         VK_CHECK(vkEndCommandBuffer(per_frame_data.command_buffer));
         VK_CHECK(vkResetFences(internal.device, 1, &per_frame_data.render_fence));

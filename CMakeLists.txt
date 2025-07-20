@@ -32,3 +32,10 @@ set(CMAKE_PREFIX_PATH "${VULKAN_SDK}")
 target_link_libraries(VV PRIVATE volk::volk_headers)
 target_link_libraries(VV PRIVATE SDL3::SDL3)
 target_link_libraries(VV PRIVATE VulkanMemoryAllocator)
+target_link_libraries(VV PRIVATE DearImGUI)
+
+set(DEAR_IMGUI_BACKEND_SOURCE ${CMAKE_SOURCE_DIR}/lib/imgui/backends/)
+target_sources(VV PRIVATE
+        ${DEAR_IMGUI_BACKEND_SOURCE}imgui_impl_sdl3.cpp
+        ${DEAR_IMGUI_BACKEND_SOURCE}imgui_impl_vulkan.cpp
+)

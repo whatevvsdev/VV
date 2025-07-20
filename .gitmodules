@@ -7,3 +7,7 @@
 [submodule "lib/volk"]
 	path = lib/volk
 	url = https://github.com/zeux/volk
+[submodule "lib/imgui"]
+	path = lib/imgui
+	url = https://github.com/ocornut/imgui
+	branch = docking
