@@ -38,6 +38,8 @@ namespace Renderer::Core
         VkDebugUtilsMessengerEXT debug_messenger { VK_NULL_HANDLE };
 
         VkPhysicalDevice physical_device { VK_NULL_HANDLE };
+        VkPhysicalDeviceDescriptorBufferPropertiesEXT physical_device_descriptor_buffer_properties;
+        VkPhysicalDeviceProperties2 physical_device_properties;
         VkDevice device { VK_NULL_HANDLE };
         VkQueue queue { VK_NULL_HANDLE };
         u32 queue_family_index { 0 }; // Supports Presentation, Graphics and Compute (and Transfer implicitly)
@@ -75,6 +77,7 @@ namespace Renderer::Core
         VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,
         VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
     };
 
     // Internal Functions
@@ -223,10 +226,14 @@ namespace Renderer::Core
 
         // Get the properties of all devices
         std::vector<VkPhysicalDeviceProperties2> device_properties(physical_device_count);
+        std::vector<VkPhysicalDeviceDescriptorBufferPropertiesEXT> descriptor_buffer_properties(physical_device_count);
+
 
         for (u32 i = 0; i < physical_device_count; i++)
         {
-            device_properties[i].sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            descriptor_buffer_properties[i].sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
+            device_properties[i].sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
+            device_properties[i].pNext = &descriptor_buffer_properties[i];
             vkGetPhysicalDeviceProperties2(physical_devices[i], &device_properties[i]);
         }
 
@@ -250,6 +257,8 @@ namespace Renderer::Core
                 if ((flags & VK_QUEUE_GRAPHICS_BIT) && (flags & VK_QUEUE_COMPUTE_BIT) && is_presentation_supported)
                 {
                     internal.physical_device = physical_devices[i];
+                    internal.physical_device_descriptor_buffer_properties = descriptor_buffer_properties[i];
+                    internal.physical_device_properties = device_properties[i];
                     internal.queue_family_index = f;
 
                     printf("Found and picked device with name: %s\n", device_properties[i].properties.deviceName);
