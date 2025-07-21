@@ -7,15 +7,15 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libgcc -static-libstdc++")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 
 add_executable(VV main.cpp
-        Renderer.cpp
-        Renderer.h
-        types.h
-        io.cpp
-        io.h
-        vk_renderer_core.cpp
-        renderer_core.h
-        deletion_queue.h
-        vv_vulkan.h
+        renderer/renderer.cpp
+        renderer/renderer.h
+        common/types.h
+        common/io.cpp
+        common/io.h
+        renderer/vk_renderer_core.cpp
+        renderer/renderer_core.h
+        common/function_queue.h
+        renderer/vv_vulkan.h
 )
 
 add_subdirectory(lib)

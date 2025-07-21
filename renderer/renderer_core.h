@@ -1,16 +1,21 @@
 ﻿#pragma once
 
-struct SDL_Window;
-
 #define RENDERER_DEBUG 1
 
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan_core.h>
 #include "vk_mem_alloc.h"
 #include <string>
-#include "types.h"
+#include "../common/types.h"
 
-#define VK_PROC_ADDR_LOAD(string_name) reinterpret_cast<PFN_##string_name>(vkGetInstanceProcAddr(internal.instance, #string_name))
+#define VK_CHECK(x)                                        \
+do {                                                       \
+VkResult err = x;                                          \
+if (err) {                                                 \
+printf("Detected Vulkan error: %s", string_VkResult(err)); \
+abort();                                                   \
+}                                                          \
+} while (0)
 
 #define VK_NAME(handle, object_type, name) \
 { \
@@ -21,13 +26,16 @@ struct SDL_Window;
     name_info.pNext = nullptr; \
     name_info.pObjectName = name_object.c_str(); \
     name_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT; \
-    VK_PROC_ADDR_LOAD(vkSetDebugUtilsObjectNameEXT)(internal.device, &name_info); \
+    vkSetDebugUtilsObjectNameEXT(internal.device, &name_info); \
 }
 
+// TODO: Move this elsewhere
 inline u32 aligned_size(u32 value, u32 alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);
 }
+
+struct SDL_Window;
 
 namespace Renderer
 {
