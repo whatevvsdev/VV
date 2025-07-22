@@ -20,6 +20,8 @@ add_executable(VV main.cpp
         game/game.h
         renderer/cameras.cpp
         renderer/cameras.h
+        renderer/compute_pipeline.cpp
+        renderer/compute_pipeline.h
 )
 
 add_subdirectory(lib)

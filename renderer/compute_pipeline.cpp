@@ -1,1 +1,204 @@
 ﻿#include "compute_pipeline.h"
+
+#include "../common/types.h"
+#include "renderer_core.h"
+
+VkShaderModule create_shader_module(const std::vector<u8>& bytecode)
+{
+    VkShaderModuleCreateInfo shader_module_create_info
+    {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = bytecode.size() * sizeof(u8),
+        .pCode = reinterpret_cast<const u32*>(bytecode.data()),
+    };
+
+    VkShaderModule shader_module = VK_NULL_HANDLE;
+
+    VK_CHECK(vkCreateShaderModule(Renderer::Core::get_logical_device(), &shader_module_create_info, nullptr, &shader_module));
+
+    return shader_module;
+}
+
+void ComputePipeline::dispatch(VkCommandBuffer command_buffer, u32 group_count_x, u32 group_count_y, u32 group_count_z, void* push_constants_data_ptr)
+{
+    // bind the gradient drawing compute pipeline
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+
+    VkBufferDeviceAddressInfo buffer_device_address_info
+    {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+        .buffer = descriptor_buffer,
+    };
+
+    VkDeviceAddress address = vkGetBufferDeviceAddress(Renderer::Core::get_logical_device(), &buffer_device_address_info);
+
+    VkDescriptorBufferBindingInfoEXT descriptor_buffer_binding_info
+    {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
+        .address = address,
+        .usage   = VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT,
+    };
+
+    vkCmdBindDescriptorBuffersEXT(command_buffer, 1, &descriptor_buffer_binding_info);
+
+    u32 buffer_index = 0;
+    VkDeviceSize buffer_offset = 0;
+    vkCmdSetDescriptorBufferOffsetsEXT(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &buffer_index, &buffer_offset);
+
+    if ((push_constants_size != 0) && push_constants_data_ptr)
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, push_constants_size, push_constants_data_ptr);
+
+    vkCmdDispatch(command_buffer, group_count_x, group_count_y, group_count_z);
+}
+
+void ComputePipeline::destroy()
+{
+    vkDestroyDescriptorSetLayout(device, descriptor_set_layout, nullptr);
+    vmaDestroyBuffer(Renderer::Core::get_vma_allocator(), descriptor_buffer, descriptor_buffer_allocation);
+    vkDestroyPipelineLayout(Renderer::Core::get_logical_device(), pipeline_layout, nullptr);
+    vkDestroyPipeline(Renderer::Core::get_logical_device(), pipeline, nullptr);
+}
+
+ComputePipelineBuilder::ComputePipelineBuilder(const FSPath& path)
+{
+    auto comp_binary = IO::read_binary_file(path);
+
+    if (comp_binary.empty())
+    {
+        printf("Failed to read %s compiled binary file.\n", path.c_str());
+        return;
+    }
+
+    shader_module = create_shader_module(comp_binary);
+}
+
+ComputePipelineBuilder& ComputePipelineBuilder::bind_storage_image(VkDescriptorType type, VkImageView image_view)
+{
+    VkDescriptorSetLayoutBinding new_descriptor_set_layout_binding
+    {
+        .binding = static_cast<u32>(bindings.size()),
+        .descriptorType = type,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+    };
+
+    bindings.push_back(new_descriptor_set_layout_binding);
+    image_views.push_back(image_view);
+
+    return *this;
+}
+
+ComputePipelineBuilder& ComputePipelineBuilder::set_push_constants_size(VkDeviceSize size)
+{
+    push_constants_size = size;
+    return *this;
+}
+
+ComputePipeline ComputePipelineBuilder::create(VkDevice device)
+{
+    ComputePipeline generated_pipeline;
+
+    // Create descriptor set layout
+    VkDescriptorSetLayoutCreateInfo info =
+    {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT,
+        .bindingCount = static_cast<u32>(bindings.size()),
+        .pBindings = bindings.data(),
+    };
+
+    VK_CHECK(vkCreateDescriptorSetLayout(device, &info, nullptr, &generated_pipeline.descriptor_set_layout));
+
+    auto descriptor_buffer_properties = Renderer::Core::get_physical_device_properties().descriptor_buffer_properties;
+
+    // Get the size of the descriptor set/layout and align it properly
+    vkGetDescriptorSetLayoutSizeEXT(Renderer::Core::get_logical_device(), generated_pipeline.descriptor_set_layout, &generated_pipeline.descriptor_set_layout_size);
+    generated_pipeline.descriptor_set_layout_size = aligned_size(generated_pipeline.descriptor_set_layout_size, descriptor_buffer_properties.descriptorBufferOffsetAlignment);
+
+    vkGetDescriptorSetLayoutBindingOffsetEXT(Renderer::Core::get_logical_device(), generated_pipeline.descriptor_set_layout, 0u, &generated_pipeline.descriptor_set_layout_descriptor_offset);
+
+    // Create a buffer to hold the descriptor set/layout
+    VkBufferCreateInfo buffer_create_info
+    {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = generated_pipeline.descriptor_set_layout_size,
+        .usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+    };
+
+    VmaAllocationCreateInfo vma_create_info
+    {
+        .usage = VMA_MEMORY_USAGE_CPU_TO_GPU,
+    };
+
+    VK_CHECK(vmaCreateBuffer(Renderer::Core::get_vma_allocator(), &buffer_create_info, &vma_create_info, &generated_pipeline.descriptor_buffer, &generated_pipeline.descriptor_buffer_allocation, nullptr));
+
+    // Write descriptors to buffer
+    u8* mapped_ptr = nullptr;
+    VK_CHECK(vmaMapMemory(Renderer::Core::get_vma_allocator(), generated_pipeline.descriptor_buffer_allocation, reinterpret_cast<void**>(&mapped_ptr)));
+
+    for (i32 i = 0; i < bindings.size(); i++)
+    {
+        VkDescriptorImageInfo image_descriptor
+        {
+            .sampler = VK_NULL_HANDLE,
+            .imageView = image_views[i],
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+        };
+
+        VkDescriptorGetInfoEXT image_descriptor_info
+        {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+            .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .data = {
+                .pCombinedImageSampler = &image_descriptor
+            }
+        };
+
+        // Write the descriptor to the buffer and offset the pointer to move onto the next descriptor
+        vkGetDescriptorEXT(Renderer::Core::get_logical_device(), &image_descriptor_info, descriptor_buffer_properties.combinedImageSamplerDescriptorSize, mapped_ptr);
+        mapped_ptr += descriptor_buffer_properties.combinedImageSamplerDescriptorSize;
+    }
+
+    vmaUnmapMemory(Renderer::Core::get_vma_allocator(), generated_pipeline.descriptor_buffer_allocation);
+
+    // Create pipeline layout
+    VkPushConstantRange push_constant_range;
+    push_constant_range.offset = 0;
+    push_constant_range.size = push_constants_size;
+    push_constant_range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkPipelineLayoutCreateInfo compute_pipeline_layout_create_info
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .setLayoutCount = 1,
+        .pSetLayouts = &generated_pipeline.descriptor_set_layout,
+        .pushConstantRangeCount = push_constants_size == 0u ? 0u : 1u,
+        .pPushConstantRanges = &push_constant_range,
+    };
+
+    generated_pipeline.push_constants_size = push_constants_size;
+
+    VK_CHECK(vkCreatePipelineLayout(Renderer::Core::get_logical_device(), &compute_pipeline_layout_create_info, nullptr, &generated_pipeline.pipeline_layout));
+
+    // Create pipeline
+    VkPipelineShaderStageCreateInfo stageinfo{};
+    stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageinfo.pNext = nullptr;
+    stageinfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageinfo.module = shader_module;
+    stageinfo.pName = "main";
+
+    VkComputePipelineCreateInfo computePipelineCreateInfo{};
+    computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    computePipelineCreateInfo.pNext = nullptr;
+    computePipelineCreateInfo.layout = generated_pipeline.pipeline_layout;
+    computePipelineCreateInfo.stage = stageinfo;
+    computePipelineCreateInfo.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+
+    VK_CHECK(vkCreateComputePipelines(Renderer::Core::get_logical_device(), nullptr, 1, &computePipelineCreateInfo, nullptr, &generated_pipeline.pipeline))  ;
+    vkDestroyShaderModule(Renderer::Core::get_logical_device(), shader_module, nullptr);
+    VK_NAME(device, generated_pipeline.pipeline, VK_OBJECT_TYPE_PIPELINE, "Test pipeline");
+
+    return generated_pipeline;
+}

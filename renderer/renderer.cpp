@@ -17,6 +17,7 @@
 #include "SDL3/SDL_vulkan.h"
 #include <glm/mat4x4.hpp> // glm::mat4
 
+#include "compute_pipeline.h"
 #include "cameras.h"
 
 enum FunctionQueueLifetime
@@ -28,186 +29,29 @@ enum FunctionQueueLifetime
 
 struct
 {
-    VkPipelineLayout compute_pipeline_layout { VK_NULL_HANDLE };
-    VkPipeline compute_pipeline { VK_NULL_HANDLE };
+    ComputePipeline raygen_pipeline;
 
     Renderer::AllocatedImage draw_image {};
-
-    VkDescriptorSetLayout _drawImageDescriptorLayout;
-
-    VkSampler draw_image_sampler { VK_NULL_HANDLE };
-    VkBuffer draw_image_descriptor_buffer { VK_NULL_HANDLE };
-    VmaAllocation draw_image_descriptor_buffer_allocation { VK_NULL_HANDLE };
-    VkDeviceSize draw_image_descriptor_layout_size { 0 };
-    VkDeviceSize draw_image_set_layout_descriptor_offset { 0 };
 } state;
-
-VkShaderModule create_shader_module(const std::vector<u8>& bytecode)
-{
-    VkShaderModuleCreateInfo shader_module_create_info
-    {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = bytecode.size() * sizeof(u8),
-        .pCode = reinterpret_cast<const u32*>(bytecode.data()),
-    };
-
-    VkShaderModule shader_module = VK_NULL_HANDLE;
-
-    VK_CHECK(vkCreateShaderModule(Renderer::Core::get_logical_device(), &shader_module_create_info, nullptr, &shader_module));
-
-    return shader_module;
-}
-
-struct DescriptorLayoutBuilder
-{
-    std::vector<VkDescriptorSetLayoutBinding> bindings;
-
-    void add_binding(uint32_t binding, VkDescriptorType type);
-    void clear();
-    VkDescriptorSetLayout build(VkDevice device, VkShaderStageFlags shaderStages, void* pNext = nullptr, VkDescriptorSetLayoutCreateFlags flags = 0);
-};
-
-VkDescriptorSetLayout DescriptorLayoutBuilder::build(VkDevice device, VkShaderStageFlags shaderStages, void* pNext, VkDescriptorSetLayoutCreateFlags flags)
-{
-    for (auto& b : bindings)
-        b.stageFlags |= shaderStages;
-
-    VkDescriptorSetLayoutCreateInfo info =
-    {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-    };
-    info.pNext = pNext;
-
-    info.pBindings = bindings.data();
-    info.bindingCount = (uint32_t)bindings.size();
-    info.flags = flags | VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
-
-
-    VkDescriptorSetLayout set;
-    VK_CHECK(vkCreateDescriptorSetLayout(device, &info, nullptr, &set));
-    QUEUE_FUNCTION(FunctionQueueLifetime::CORE, vkDestroyDescriptorSetLayout(device, set, nullptr));
-
-    return set;
-}
-
-void DescriptorLayoutBuilder::add_binding(uint32_t binding, VkDescriptorType type)
-{
-    VkDescriptorSetLayoutBinding newbind {};
-    newbind.binding = binding;
-    newbind.descriptorCount = 1;
-    newbind.descriptorType = type;
-
-    bindings.push_back(newbind);
-}
-
-void DescriptorLayoutBuilder::clear()
-{
-    bindings.clear();
-}
 
 struct
 {
     glm::mat4 camera_matrix { glm::mat4(1) };
-} compute_push_offsets;
+} compute_push_constants;
 
 void create_compute_pipeline()
 {
-    auto comp_binary = IO::read_binary_file("shaders/rt_raygen.comp.spv");
+    state.raygen_pipeline = ComputePipelineBuilder("shaders/rt_raygen.comp.spv")
+        .bind_storage_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, state.draw_image.view)
+        .set_push_constants_size(sizeof(compute_push_constants))
+        .create(Renderer::Core::get_logical_device());
 
-    if (comp_binary.empty())
-    {
-        printf("Failed to read .comp compiled binary file.\n");
-        return;
-    }
-
-    auto comp_shader_module = create_shader_module(comp_binary);
-
-    //make the descriptor set layout for our compute draw
-    {
-        DescriptorLayoutBuilder builder;
-        builder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-        state._drawImageDescriptorLayout = builder.build(Renderer::Core::get_logical_device(), VK_SHADER_STAGE_COMPUTE_BIT);
-    }
-
-    auto descriptor_buffer_properties = Renderer::Core::get_physical_device_properties().descriptor_buffer_properties;
-
-    // Get the size of the descriptor set and align it properly
-    vkGetDescriptorSetLayoutSizeEXT(Renderer::Core::get_logical_device(), state._drawImageDescriptorLayout, &state.draw_image_descriptor_layout_size);
-    state.draw_image_descriptor_layout_size = aligned_size(state.draw_image_descriptor_layout_size, descriptor_buffer_properties.descriptorBufferOffsetAlignment);
-
-    vkGetDescriptorSetLayoutBindingOffsetEXT(Renderer::Core::get_logical_device(), state._drawImageDescriptorLayout, 0u, &state.draw_image_set_layout_descriptor_offset);
-
-    VkBufferCreateInfo buffer_create_info
-    {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = state.draw_image_descriptor_layout_size,
-        .usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-    };
-
-    VmaAllocationCreateInfo vma_create_info
-    {
-        .usage = VMA_MEMORY_USAGE_CPU_TO_GPU,
-    };
-
-    // Create a buffer to hold the set
-    VK_CHECK(vmaCreateBuffer(Renderer::Core::get_vma_allocator(), &buffer_create_info, &vma_create_info, &state.draw_image_descriptor_buffer, &state.draw_image_descriptor_buffer_allocation, nullptr));
-    QUEUE_FUNCTION(FunctionQueueLifetime::CORE, vmaDestroyBuffer(Renderer::Core::get_vma_allocator(), state.draw_image_descriptor_buffer, state.draw_image_descriptor_buffer_allocation));
-
-    VkDescriptorImageInfo image_descriptor{};
-    image_descriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    image_descriptor.imageView = state.draw_image.view;
-    image_descriptor.sampler = VK_NULL_HANDLE;//state.draw_image_sampler;
-
-    VkDescriptorGetInfoEXT image_descriptor_info
-    {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-        .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-    };
-
-    image_descriptor_info.data.pCombinedImageSampler = &image_descriptor;
-
-    void* mapped_ptr = nullptr;
-    VK_CHECK(vmaMapMemory(Renderer::Core::get_vma_allocator(), state.draw_image_descriptor_buffer_allocation, &mapped_ptr));
-
-    vkGetDescriptorEXT(Renderer::Core::get_logical_device(), &image_descriptor_info, descriptor_buffer_properties.combinedImageSamplerDescriptorSize, mapped_ptr);
-
-    vmaUnmapMemory(Renderer::Core::get_vma_allocator(), state.draw_image_descriptor_buffer_allocation);
-
-    VkPushConstantRange push_constant_range;
-    push_constant_range.offset = 0;
-    push_constant_range.size = sizeof(compute_push_offsets);
-    push_constant_range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    VkPipelineLayoutCreateInfo computeLayout
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pNext = nullptr,
-        .setLayoutCount = 1,
-        .pSetLayouts = &state._drawImageDescriptorLayout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &push_constant_range,
-    };
-
-    VK_CHECK(vkCreatePipelineLayout(Renderer::Core::get_logical_device(), &computeLayout, nullptr, &state.compute_pipeline_layout));
-    QUEUE_FUNCTION(FunctionQueueLifetime::CORE, vkDestroyPipelineLayout(Renderer::Core::get_logical_device(), state.compute_pipeline_layout, nullptr));
-
-    VkPipelineShaderStageCreateInfo stageinfo{};
-    stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stageinfo.pNext = nullptr;
-    stageinfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    stageinfo.module = comp_shader_module;
-    stageinfo.pName = "main";
-
-    VkComputePipelineCreateInfo computePipelineCreateInfo{};
-    computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    computePipelineCreateInfo.pNext = nullptr;
-    computePipelineCreateInfo.layout = state.compute_pipeline_layout;
-    computePipelineCreateInfo.stage = stageinfo;
-    computePipelineCreateInfo.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
-
-    VK_CHECK(vkCreateComputePipelines(Renderer::Core::get_logical_device(), nullptr, 1, &computePipelineCreateInfo, nullptr, &state.compute_pipeline))  ;
-    QUEUE_FUNCTION(FunctionQueueLifetime::CORE, vkDestroyPipeline(Renderer::Core::get_logical_device(), state.compute_pipeline, nullptr));
-    vkDestroyShaderModule(Renderer::Core::get_logical_device(), comp_shader_module, nullptr);
+    /* TODO: When we are hot-reloading and live reconstructing the pipelines,
+        we cannot rely on the deletion queue (unless we can specify a key to
+        remove the pipline from it if we have to destroy the pipeline early)
+    */
+    QUEUE_FUNCTION(FunctionQueueLifetime::CORE, state.raygen_pipeline.destroy());
+    // Create Pipeline
 }
 
 void Renderer::initialize(SDL_Window* sdl_window_ptr)
@@ -299,7 +143,7 @@ void Renderer::end_frame()
     auto per_frame_data = Renderer::Core::get_current_frame_data();
     auto swapchain_data = Renderer::Core::get_swapchain_data();
 
-    compute_push_offsets.camera_matrix = Renderer::Cameras::get_current_camera_data_copy().camera_matrix;
+    compute_push_constants.camera_matrix = Renderer::Cameras::get_current_camera_data_copy().camera_matrix;
 
     transition_image_layout(per_frame_data.command_buffer,
        per_frame_data.swapchain_image,
@@ -321,34 +165,7 @@ void Renderer::end_frame()
        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
     );
 
-    // bind the gradient drawing compute pipeline
-    vkCmdBindPipeline(per_frame_data.command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, state.compute_pipeline);
-
-    VkBufferDeviceAddressInfo buffer_device_address_info
-    {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-        .buffer = state.draw_image_descriptor_buffer,
-    };
-
-    VkDeviceAddress address = vkGetBufferDeviceAddress(Renderer::Core::get_logical_device(), &buffer_device_address_info);
-
-    VkDescriptorBufferBindingInfoEXT descriptor_buffer_binding_info
-    {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT,
-        .address = address,
-        .usage   = VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT,
-    };
-
-    vkCmdBindDescriptorBuffersEXT(per_frame_data.command_buffer, 1, &descriptor_buffer_binding_info);
-
-    // We only have one buffer (specifically for images, because you have to separate UBO and Image)
-    uint32_t buffer_index_image = 0;
-    VkDeviceSize buffer_offset = 0;
-    vkCmdSetDescriptorBufferOffsetsEXT(per_frame_data.command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, state.compute_pipeline_layout, 0, 1, &buffer_index_image, &buffer_offset);
-
-    // execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
-    vkCmdPushConstants(per_frame_data.command_buffer, state.compute_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(compute_push_offsets), &compute_push_offsets);
-    vkCmdDispatch(per_frame_data.command_buffer, std::ceil(swapchain_data.surface_extent.width / 16.0), std::ceil(swapchain_data.surface_extent.height / 16.0), 1);
+        state.raygen_pipeline.dispatch(per_frame_data.command_buffer, std::ceil(swapchain_data.surface_extent.width / 16.0), std::ceil(swapchain_data.surface_extent.height / 16.0), 1, &compute_push_constants);
 
     transition_image_layout(per_frame_data.command_buffer,
        state.draw_image.image,

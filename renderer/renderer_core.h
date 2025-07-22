@@ -1,23 +1,14 @@
 ﻿#pragma once
 
-#define RENDERER_DEBUG 1
+#define RENDERER_DEBUG 0
 
-#define VK_NO_PROTOTYPES
-#include <vulkan/vulkan_core.h>
+#include "vv_vulkan.h"
 #include "vk_mem_alloc.h"
 #include <string>
 #include "../common/types.h"
 
-#define VK_CHECK(x)                                        \
-do {                                                       \
-VkResult err = x;                                          \
-if (err) {                                                 \
-printf("Detected Vulkan error: %s", string_VkResult(err)); \
-abort();                                                   \
-}                                                          \
-} while (0)
-
-#define VK_NAME(handle, object_type, name) \
+#if RENDERER_DEBUG
+#define VK_NAME(device, handle, object_type, name) \
 { \
     std::string name_object = name; \
     VkDebugUtilsObjectNameInfoEXT name_info{}; \
@@ -26,8 +17,12 @@ abort();                                                   \
     name_info.pNext = nullptr; \
     name_info.pObjectName = name_object.c_str(); \
     name_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT; \
-    vkSetDebugUtilsObjectNameEXT(internal.device, &name_info); \
+    vkSetDebugUtilsObjectNameEXT(device, &name_info); \
 }
+#else
+#define VK_NAME(device, handle, object_type, name) {device; handle; object_type; name;}
+#endif
+
 
 // TODO: Move this elsewhere
 inline u32 aligned_size(u32 value, u32 alignment)

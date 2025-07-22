@@ -41,7 +41,9 @@ namespace Renderer::Core
         VkInstance instance { VK_NULL_HANDLE };
         VmaAllocator allocator { VK_NULL_HANDLE };
 
+#if RENDERER_DEBUG
         VkDebugUtilsMessengerEXT debug_messenger { VK_NULL_HANDLE };
+#endif
 
         VkPhysicalDevice physical_device { VK_NULL_HANDLE };
         PhysicalDeviceProperties physical_device_properties {};
@@ -74,7 +76,9 @@ namespace Renderer::Core
 
     // TODO: Maybe needed device and instance extensions could also be passed from renderer?
     std::vector<const char*> instance_extensions = {
+#if RENDERER_DEBUG
         VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+#endif
     };
 
     std::vector<const char*> device_extensions = {
@@ -137,12 +141,21 @@ namespace Renderer::Core
             .ppEnabledLayerNames = validation_layers.empty() ? nullptr : validation_layers.data(),
         };
 
+
+
         // Get instance extensions from SDL and add them to our create info
         u32 sdl_instance_extensions_count;
         const char * const *sdl_instance_extensions = SDL_Vulkan_GetInstanceExtensions(&sdl_instance_extensions_count);
 
         for (i32 i = 0; i < sdl_instance_extensions_count; i++)
+        {
             instance_extensions.push_back(sdl_instance_extensions[i]);
+        }
+
+        for (auto& instance_extension : instance_extensions)
+        {
+            printf("extension: %s\n", instance_extension);
+        }
 
         instance_create_info.enabledExtensionCount = static_cast<u32>(instance_extensions.size());
         instance_create_info.ppEnabledExtensionNames = instance_extensions.data();
@@ -151,11 +164,13 @@ namespace Renderer::Core
         QUEUE_FUNCTION(FunctionQueueLifetime::CORE, vkDestroyInstance(internal.instance, nullptr));
     }
 
+#if RENDERER_DEBUG
     VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity, VkDebugUtilsMessageTypeFlagsEXT message_type, const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void*)
     {
         printf(callback_data->pMessage);
         return VK_FALSE; // Applications must return false here
     }
+#endif
 
     void create_debug_messenger()
     {
@@ -181,12 +196,6 @@ namespace Renderer::Core
             .dynamicRendering = VK_TRUE,
         };
 
-        VkPhysicalDeviceSynchronization2FeaturesKHR synchronization2_features
-        {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR,
-            .synchronization2 = VK_TRUE
-        };
-
         VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features
         {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
@@ -199,8 +208,7 @@ namespace Renderer::Core
             .descriptorBuffer = VK_TRUE,
         };
 
-        dynamic_rendering_feature.pNext = &synchronization2_features;
-        synchronization2_features.pNext = &buffer_device_address_features;
+        dynamic_rendering_feature.pNext = &buffer_device_address_features;
         buffer_device_address_features.pNext = &descriptor_buffer_features;
 
         VkDeviceCreateInfo device_create_info{};
@@ -531,8 +539,6 @@ namespace Renderer::Core
         };
 
         VK_CHECK(vmaCreateImage(internal.allocator, &image_create_info, &allocation_create_info, &new_image.image, &new_image.allocation, nullptr));
-        if (!name.empty())
-            VK_NAME(new_image.image, VK_OBJECT_TYPE_IMAGE, name);
 
         QUEUE_FUNCTION(FunctionQueueLifetime::CORE, vmaDestroyImage(internal.allocator, new_image.image, new_image.allocation));
 

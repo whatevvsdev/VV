@@ -1,15 +1,43 @@
 ﻿#pragma once
 
+#include <vector>
+
 #include "vv_vulkan.h"
 #include "vk_mem_alloc.h"
 
-struct ComputePipelineBuilder
-{
-
-};
+#include "../common/io.h"
 
 struct ComputePipeline
 {
+    VkPipeline pipeline;
+    VkPipelineLayout pipeline_layout;
+
+    // Descriptor Buffer
     VkBuffer descriptor_buffer { VK_NULL_HANDLE };
     VmaAllocation descriptor_buffer_allocation { VK_NULL_HANDLE };
+
+    VkDescriptorSetLayout descriptor_set_layout { VK_NULL_HANDLE };
+    VkDeviceSize descriptor_set_layout_size { 0 };
+    VkDeviceSize descriptor_set_layout_descriptor_offset { 0 };
+
+    VkDevice device { VK_NULL_HANDLE };
+
+    VkDeviceSize push_constants_size { 0 };
+
+    void dispatch(VkCommandBuffer command_buffer, u32 group_count_x, u32 group_count_y, u32 group_count_z, void* push_constants_data_ptr = nullptr);
+    void destroy();
+};
+
+struct ComputePipelineBuilder
+{
+    std::vector<VkDescriptorSetLayoutBinding> bindings {};
+    std::vector<VkImageView> image_views {}; // TODO: Figure out a better way of doing this, for now I only have storage images
+
+    VkShaderModule shader_module { VK_NULL_HANDLE };
+    VkDeviceSize push_constants_size { 0 };
+
+    ComputePipelineBuilder(const FSPath& path);
+    ComputePipelineBuilder& bind_storage_image(VkDescriptorType type, VkImageView image_view);
+    ComputePipelineBuilder& set_push_constants_size(VkDeviceSize size);
+    ComputePipeline create(VkDevice device);
 };
