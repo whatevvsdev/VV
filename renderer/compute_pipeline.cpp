@@ -8,7 +8,7 @@ VkShaderModule create_shader_module(const std::vector<u8>& bytecode)
     VkShaderModuleCreateInfo shader_module_create_info
     {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = bytecode.size() * sizeof(u8),
+        .codeSize = bytecode.size(),
         .pCode = reinterpret_cast<const u32*>(bytecode.data()),
     };
 
@@ -72,18 +72,37 @@ ComputePipelineBuilder::ComputePipelineBuilder(const FSPath& path)
     shader_module = create_shader_module(comp_binary);
 }
 
-ComputePipelineBuilder& ComputePipelineBuilder::bind_storage_image(VkDescriptorType type, VkImageView image_view)
+ComputePipelineBuilder& ComputePipelineBuilder::bind_storage_image(VkImageView image_view)
 {
     VkDescriptorSetLayoutBinding new_descriptor_set_layout_binding
     {
         .binding = static_cast<u32>(bindings.size()),
-        .descriptorType = type,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
         .descriptorCount = 1,
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
     };
 
     bindings.push_back(new_descriptor_set_layout_binding);
     image_views.push_back(image_view);
+    buffer_sizes.push_back(0);
+    buffers.push_back(VK_NULL_HANDLE);
+
+    return *this;
+}
+
+ComputePipelineBuilder& ComputePipelineBuilder::bind_storage_buffer(VkBuffer buffer, VkDeviceSize buffer_size)
+{
+    VkDescriptorSetLayoutBinding new_descriptor_set_layout_binding
+    {
+        .binding = static_cast<u32>(bindings.size()),
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+    };
+    bindings.push_back(new_descriptor_set_layout_binding);
+    image_views.push_back(VK_NULL_HANDLE);
+    buffer_sizes.push_back(buffer_size);
+    buffers.push_back(buffer);
 
     return *this;
 }
@@ -115,8 +134,6 @@ ComputePipeline ComputePipelineBuilder::create(VkDevice device)
     vkGetDescriptorSetLayoutSizeEXT(Renderer::Core::get_logical_device(), generated_pipeline.descriptor_set_layout, &generated_pipeline.descriptor_set_layout_size);
     generated_pipeline.descriptor_set_layout_size = aligned_size(generated_pipeline.descriptor_set_layout_size, descriptor_buffer_properties.descriptorBufferOffsetAlignment);
 
-    vkGetDescriptorSetLayoutBindingOffsetEXT(Renderer::Core::get_logical_device(), generated_pipeline.descriptor_set_layout, 0u, &generated_pipeline.descriptor_set_layout_descriptor_offset);
-
     // Create a buffer to hold the descriptor set/layout
     VkBufferCreateInfo buffer_create_info
     {
@@ -135,30 +152,56 @@ ComputePipeline ComputePipelineBuilder::create(VkDevice device)
     // Write descriptors to buffer
     u8* mapped_ptr = nullptr;
     VK_CHECK(vmaMapMemory(Renderer::Core::get_vma_allocator(), generated_pipeline.descriptor_buffer_allocation, reinterpret_cast<void**>(&mapped_ptr)));
-
     for (i32 i = 0; i < bindings.size(); i++)
     {
-        VkDescriptorImageInfo image_descriptor
-        {
-            .sampler = VK_NULL_HANDLE,
-            .imageView = image_views[i],
-            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-        };
-
-        VkDescriptorGetInfoEXT image_descriptor_info
+        VkDescriptorGetInfoEXT descriptor_info
         {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .data = {
-                .pCombinedImageSampler = &image_descriptor
-            }
+            .type = bindings[i].descriptorType,
         };
 
-        // Write the descriptor to the buffer and offset the pointer to move onto the next descriptor
-        vkGetDescriptorEXT(Renderer::Core::get_logical_device(), &image_descriptor_info, descriptor_buffer_properties.combinedImageSamplerDescriptorSize, mapped_ptr);
-        mapped_ptr += descriptor_buffer_properties.combinedImageSamplerDescriptorSize;
-    }
+        VkDeviceSize descriptor_binding_offset { 0 };
+        vkGetDescriptorSetLayoutBindingOffsetEXT(Renderer::Core::get_logical_device(), generated_pipeline.descriptor_set_layout, static_cast<u32>(i), &descriptor_binding_offset);
 
+        switch (bindings[i].descriptorType)
+        {
+            default:
+                printf("DESCRIPTOR TYPE NOT SUPPORTED FOR DESCRIPTOR BUFFER");
+                break;
+            case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+                {
+                    VkDescriptorImageInfo image_descriptor
+                    {
+                        .sampler = VK_NULL_HANDLE,
+                        .imageView = image_views[i],
+                        .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+                    };
+                    descriptor_info.data.pStorageImage = &image_descriptor;
+                    vkGetDescriptorEXT(Renderer::Core::get_logical_device(), &descriptor_info, descriptor_buffer_properties.storageImageDescriptorSize, mapped_ptr + descriptor_binding_offset);
+
+                }
+                break;
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+                {
+                    VkBufferDeviceAddressInfo buffer_device_address_info
+                    {
+                        .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+                        .buffer = buffers[i],
+                    };
+
+                    VkDescriptorAddressInfoEXT buffer_descriptor_info{
+                        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
+                        .address = vkGetBufferDeviceAddress(device, &buffer_device_address_info),
+                        .range = buffer_sizes[i],
+                        .format = VK_FORMAT_UNDEFINED
+                    };
+
+                    descriptor_info.data.pStorageBuffer = &buffer_descriptor_info;
+                    vkGetDescriptorEXT(Renderer::Core::get_logical_device(), &descriptor_info, descriptor_buffer_properties.storageBufferDescriptorSize, mapped_ptr + descriptor_binding_offset);
+                }
+                break;
+        }
+    }
     vmaUnmapMemory(Renderer::Core::get_vma_allocator(), generated_pipeline.descriptor_buffer_allocation);
 
     // Create pipeline layout
@@ -198,7 +241,6 @@ ComputePipeline ComputePipelineBuilder::create(VkDevice device)
 
     VK_CHECK(vkCreateComputePipelines(Renderer::Core::get_logical_device(), nullptr, 1, &computePipelineCreateInfo, nullptr, &generated_pipeline.pipeline))  ;
     vkDestroyShaderModule(Renderer::Core::get_logical_device(), shader_module, nullptr);
-    VK_NAME(device, generated_pipeline.pipeline, VK_OBJECT_TYPE_PIPELINE, "Test pipeline");
 
     return generated_pipeline;
 }

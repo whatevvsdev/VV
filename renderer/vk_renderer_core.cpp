@@ -152,11 +152,6 @@ namespace Renderer::Core
             instance_extensions.push_back(sdl_instance_extensions[i]);
         }
 
-        for (auto& instance_extension : instance_extensions)
-        {
-            printf("extension: %s\n", instance_extension);
-        }
-
         instance_create_info.enabledExtensionCount = static_cast<u32>(instance_extensions.size());
         instance_create_info.ppEnabledExtensionNames = instance_extensions.data();
 

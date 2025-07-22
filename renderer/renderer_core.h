@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#define RENDERER_DEBUG 0
+#define RENDERER_DEBUG 1
 
 #include "vv_vulkan.h"
 #include "vk_mem_alloc.h"

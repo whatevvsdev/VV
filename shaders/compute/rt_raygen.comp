@@ -4,6 +4,11 @@ layout (local_size_x = 16, local_size_y = 16) in;
 
 layout(rgba16f,set = 0, binding = 0) uniform image2D image;
 
+layout(std430, set = 0, binding = 1) buffer RayGenOut
+{
+    vec4 data[];
+} ray_buffer;
+
 layout( push_constant ) uniform PushConstants
 {
 	mat4 camera_matrix;
@@ -27,7 +32,9 @@ void main()
 {
     ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
 	ivec2 size = imageSize(image);
+    uint index = texelCoord.x + texelCoord.y * size.x;
 
     vec3 direction = generate_pinhole_ray_direction(size, push_constants.camera_matrix);
+    ray_buffer.data[index] = vec4(direction, 1.0f);
     imageStore(image, texelCoord, vec4(direction, 1.0f));
 }

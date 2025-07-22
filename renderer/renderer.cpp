@@ -31,6 +31,9 @@ struct
 {
     ComputePipeline raygen_pipeline;
 
+    VkBuffer raygen_buffer;
+    VmaAllocation raygen_buffer_allocation;
+
     Renderer::AllocatedImage draw_image {};
 } state;
 
@@ -41,8 +44,26 @@ struct
 
 void create_compute_pipeline()
 {
+    VkDeviceSize raygen_buffer_size = sizeof(glm::vec4) * 1280 * 720;
+
+    VkBufferCreateInfo buffer_create_info
+    {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = raygen_buffer_size,
+        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT,
+    };
+
+    VmaAllocationCreateInfo vma_allocation_create_info
+    {
+        .usage = VMA_MEMORY_USAGE_AUTO,
+    };
+
+    vmaCreateBuffer(Renderer::Core::get_vma_allocator(), &buffer_create_info, &vma_allocation_create_info, &state.raygen_buffer, &state.raygen_buffer_allocation, nullptr);
+    QUEUE_FUNCTION(FunctionQueueLifetime::CORE, vmaDestroyBuffer(Renderer::Core::get_vma_allocator(), state.raygen_buffer, state.raygen_buffer_allocation));
+
     state.raygen_pipeline = ComputePipelineBuilder("shaders/rt_raygen.comp.spv")
-        .bind_storage_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, state.draw_image.view)
+        .bind_storage_image(state.draw_image.view)
+        .bind_storage_buffer(state.raygen_buffer, raygen_buffer_size)
         .set_push_constants_size(sizeof(compute_push_constants))
         .create(Renderer::Core::get_logical_device());
 
@@ -51,7 +72,6 @@ void create_compute_pipeline()
         remove the pipline from it if we have to destroy the pipeline early)
     */
     QUEUE_FUNCTION(FunctionQueueLifetime::CORE, state.raygen_pipeline.destroy());
-    // Create Pipeline
 }
 
 void Renderer::initialize(SDL_Window* sdl_window_ptr)
@@ -165,7 +185,9 @@ void Renderer::end_frame()
        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
     );
 
-        state.raygen_pipeline.dispatch(per_frame_data.command_buffer, std::ceil(swapchain_data.surface_extent.width / 16.0), std::ceil(swapchain_data.surface_extent.height / 16.0), 1, &compute_push_constants);
+    u32 dispatch_width = std::ceil(swapchain_data.surface_extent.width / 16.0);
+    u32 dispatch_height = std::ceil(swapchain_data.surface_extent.height / 16.0);
+    state.raygen_pipeline.dispatch(per_frame_data.command_buffer, dispatch_width, dispatch_height, 1, &compute_push_constants);
 
     transition_image_layout(per_frame_data.command_buffer,
        state.draw_image.image,

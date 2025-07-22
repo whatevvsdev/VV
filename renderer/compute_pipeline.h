@@ -18,7 +18,6 @@ struct ComputePipeline
 
     VkDescriptorSetLayout descriptor_set_layout { VK_NULL_HANDLE };
     VkDeviceSize descriptor_set_layout_size { 0 };
-    VkDeviceSize descriptor_set_layout_descriptor_offset { 0 };
 
     VkDevice device { VK_NULL_HANDLE };
 
@@ -31,13 +30,21 @@ struct ComputePipeline
 struct ComputePipelineBuilder
 {
     std::vector<VkDescriptorSetLayoutBinding> bindings {};
-    std::vector<VkImageView> image_views {}; // TODO: Figure out a better way of doing this, for now I only have storage images
+
+    /* TODO: Figure out a better way of doing this, for now
+        all bindings that do not match the descriptor type
+        insert a VK_NULL_HANDLE into each vector below
+    */
+    std::vector<VkImageView> image_views {};
+    std::vector<VkBuffer> buffers {};
+    std::vector<VkDeviceSize> buffer_sizes;
 
     VkShaderModule shader_module { VK_NULL_HANDLE };
     VkDeviceSize push_constants_size { 0 };
 
     ComputePipelineBuilder(const FSPath& path);
-    ComputePipelineBuilder& bind_storage_image(VkDescriptorType type, VkImageView image_view);
+    ComputePipelineBuilder& bind_storage_image(VkImageView image_view);
+    ComputePipelineBuilder& bind_storage_buffer(VkBuffer buffer, VkDeviceSize buffer_size);
     ComputePipelineBuilder& set_push_constants_size(VkDeviceSize size);
     ComputePipeline create(VkDevice device);
 };
