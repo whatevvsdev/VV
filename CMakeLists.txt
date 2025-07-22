@@ -16,6 +16,10 @@ add_executable(VV main.cpp
         renderer/renderer_core.h
         common/function_queue.h
         renderer/vv_vulkan.h
+        game/game.cpp
+        game/game.h
+        renderer/cameras.cpp
+        renderer/cameras.h
 )
 
 add_subdirectory(lib)

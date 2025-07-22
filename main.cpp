@@ -1,6 +1,7 @@
 ﻿#include <string>
 
 #include "renderer/renderer.h"
+#include "game/game.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -36,6 +37,7 @@ int main( int argc, char* args[] )
     if (initalize_sdl())
     {
         Renderer::initialize(sdl_window);
+        Game::init(sdl_window);
 
         SDL_Event e;
         SDL_zero(e);
@@ -43,6 +45,8 @@ int main( int argc, char* args[] )
         bool quit{ false };
         while(!quit)
         {
+            Renderer::begin_frame();
+
             while(SDL_PollEvent( &e ))
             {
                 ImGui_ImplSDL3_ProcessEvent(&e);
@@ -51,7 +55,8 @@ int main( int argc, char* args[] )
                     quit = true;
             }
 
-            Renderer::update();
+            Game::update();
+            Renderer::end_frame();
         }
 
         Renderer::terminate();

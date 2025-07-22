@@ -15,6 +15,9 @@
 
 #include "imgui.h"
 #include "SDL3/SDL_vulkan.h"
+#include <glm/mat4x4.hpp> // glm::mat4
+
+#include "cameras.h"
 
 enum FunctionQueueLifetime
 {
@@ -102,9 +105,14 @@ void DescriptorLayoutBuilder::clear()
     bindings.clear();
 }
 
+struct
+{
+    glm::mat4 camera_matrix { glm::mat4(1) };
+} compute_push_offsets;
+
 void create_compute_pipeline()
 {
-    auto comp_binary = IO::read_binary_file("shaders/gradient.comp.spv");
+    auto comp_binary = IO::read_binary_file("shaders/rt_raygen.comp.spv");
 
     if (comp_binary.empty())
     {
@@ -165,11 +173,20 @@ void create_compute_pipeline()
 
     vmaUnmapMemory(Renderer::Core::get_vma_allocator(), state.draw_image_descriptor_buffer_allocation);
 
-    VkPipelineLayoutCreateInfo computeLayout{};
-    computeLayout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    computeLayout.pNext = nullptr;
-    computeLayout.pSetLayouts = &state._drawImageDescriptorLayout;
-    computeLayout.setLayoutCount = 1;
+    VkPushConstantRange push_constant_range;
+    push_constant_range.offset = 0;
+    push_constant_range.size = sizeof(compute_push_offsets);
+    push_constant_range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkPipelineLayoutCreateInfo computeLayout
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .setLayoutCount = 1,
+        .pSetLayouts = &state._drawImageDescriptorLayout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &push_constant_range,
+    };
 
     VK_CHECK(vkCreatePipelineLayout(Renderer::Core::get_logical_device(), &computeLayout, nullptr, &state.compute_pipeline_layout));
     QUEUE_FUNCTION(FunctionQueueLifetime::CORE, vkDestroyPipelineLayout(Renderer::Core::get_logical_device(), state.compute_pipeline_layout, nullptr));
@@ -271,10 +288,18 @@ void copy_image_to_image(VkCommandBuffer cmd_buffer, VkImage source, VkImage des
     vkCmdBlitImage2(cmd_buffer, &blitInfo);
 }
 
-void Renderer::update()
+void Renderer::begin_frame()
 {
     auto per_frame_data = Renderer::Core::begin_frame();
+}
+
+
+void Renderer::end_frame()
+{
+    auto per_frame_data = Renderer::Core::get_current_frame_data();
     auto swapchain_data = Renderer::Core::get_swapchain_data();
+
+    compute_push_offsets.camera_matrix = Renderer::Cameras::get_current_camera_data_copy().camera_matrix;
 
     transition_image_layout(per_frame_data.command_buffer,
        per_frame_data.swapchain_image,
@@ -294,7 +319,7 @@ void Renderer::update()
        VK_ACCESS_2_SHADER_WRITE_BIT,
        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
-   );
+    );
 
     // bind the gradient drawing compute pipeline
     vkCmdBindPipeline(per_frame_data.command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, state.compute_pipeline);
@@ -322,6 +347,7 @@ void Renderer::update()
     vkCmdSetDescriptorBufferOffsetsEXT(per_frame_data.command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, state.compute_pipeline_layout, 0, 1, &buffer_index_image, &buffer_offset);
 
     // execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
+    vkCmdPushConstants(per_frame_data.command_buffer, state.compute_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(compute_push_offsets), &compute_push_offsets);
     vkCmdDispatch(per_frame_data.command_buffer, std::ceil(swapchain_data.surface_extent.width / 16.0), std::ceil(swapchain_data.surface_extent.height / 16.0), 1);
 
     transition_image_layout(per_frame_data.command_buffer,
@@ -332,11 +358,11 @@ void Renderer::update()
        VK_ACCESS_2_TRANSFER_READ_BIT,
        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
        VK_PIPELINE_STAGE_2_TRANSFER_BIT
-   );
+    );
 
     copy_image_to_image(per_frame_data.command_buffer, state.draw_image.image, per_frame_data.swapchain_image, swapchain_data.surface_extent, swapchain_data.surface_extent);
 
-   transition_image_layout(per_frame_data.command_buffer,
+    transition_image_layout(per_frame_data.command_buffer,
        per_frame_data.swapchain_image,
        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
@@ -344,7 +370,7 @@ void Renderer::update()
        {},
        VK_PIPELINE_STAGE_2_TRANSFER_BIT,
        VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
-   );
+    );
 
     ImGui::ShowDemoWindow();
 

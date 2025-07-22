@@ -84,5 +84,6 @@ namespace Renderer
         const SwapchainData& get_swapchain_data();
         const PhysicalDeviceProperties& get_physical_device_properties();
         const VmaAllocator& get_vma_allocator();
+        const PerFrameData& get_current_frame_data();
     }
 }

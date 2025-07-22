@@ -703,4 +703,9 @@ namespace Renderer::Core
     {
         return internal.allocator;
     }
+
+    const PerFrameData& get_current_frame_data()
+    {
+        return internal.per_frame_data[internal.current_swapchain_image_index];
+    }
 }
