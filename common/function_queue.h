@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include <deque>
+#include <vector>
 #include <functional>
 
 #include "types.h"
@@ -21,7 +21,7 @@ enum FunctionQueueLifetime
 
 struct FunctionQueue
 {
-    std::deque<std::function<void()>> functions;
+    std::vector<std::function<void()>> functions;
 
     void queue(std::function<void()>&& function)
     {
@@ -30,7 +30,7 @@ struct FunctionQueue
 
     void flush()
     {
-        for (i32 i = functions.size(); i --> 0;)
+        for (i32 i = static_cast<i32>(functions.size()); i --> 0;)
             functions[i]();
 
         functions.clear();
