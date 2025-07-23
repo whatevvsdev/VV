@@ -21,7 +21,6 @@ VkShaderModule create_shader_module(const std::vector<u8>& bytecode)
 
 void ComputePipeline::dispatch(VkCommandBuffer command_buffer, u32 group_count_x, u32 group_count_y, u32 group_count_z, void* push_constants_data_ptr)
 {
-    // bind the gradient drawing compute pipeline
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
     VkBufferDeviceAddressInfo buffer_device_address_info
@@ -99,6 +98,7 @@ ComputePipelineBuilder& ComputePipelineBuilder::bind_storage_buffer(VkBuffer buf
         .descriptorCount = 1,
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
     };
+
     bindings.push_back(new_descriptor_set_layout_binding);
     image_views.push_back(VK_NULL_HANDLE);
     buffer_sizes.push_back(buffer_size);
@@ -131,14 +131,15 @@ ComputePipeline ComputePipelineBuilder::create(VkDevice device)
     auto descriptor_buffer_properties = Renderer::Core::get_physical_device_properties().descriptor_buffer_properties;
 
     // Get the size of the descriptor set/layout and align it properly
-    vkGetDescriptorSetLayoutSizeEXT(Renderer::Core::get_logical_device(), generated_pipeline.descriptor_set_layout, &generated_pipeline.descriptor_set_layout_size);
-    generated_pipeline.descriptor_set_layout_size = aligned_size(generated_pipeline.descriptor_set_layout_size, descriptor_buffer_properties.descriptorBufferOffsetAlignment);
+    VkDeviceSize descriptor_set_layout_size;
+    vkGetDescriptorSetLayoutSizeEXT(Renderer::Core::get_logical_device(), generated_pipeline.descriptor_set_layout, &descriptor_set_layout_size);
+    descriptor_set_layout_size = aligned_size(descriptor_set_layout_size, descriptor_buffer_properties.descriptorBufferOffsetAlignment);
 
     // Create a buffer to hold the descriptor set/layout
     VkBufferCreateInfo buffer_create_info
     {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = generated_pipeline.descriptor_set_layout_size,
+        .size = descriptor_set_layout_size,
         .usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
     };
 
@@ -166,7 +167,7 @@ ComputePipeline ComputePipelineBuilder::create(VkDevice device)
         switch (bindings[i].descriptorType)
         {
             default:
-                printf("DESCRIPTOR TYPE NOT SUPPORTED FOR DESCRIPTOR BUFFER");
+                printf("DESCRIPTOR TYPE NOT SUPPORTED FOR DESCRIPTOR BUFFER IN COMPUTE PIPELINE BUILDER");
                 break;
             case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
                 {
@@ -178,7 +179,6 @@ ComputePipeline ComputePipelineBuilder::create(VkDevice device)
                     };
                     descriptor_info.data.pStorageImage = &image_descriptor;
                     vkGetDescriptorEXT(Renderer::Core::get_logical_device(), &descriptor_info, descriptor_buffer_properties.storageImageDescriptorSize, mapped_ptr + descriptor_binding_offset);
-
                 }
                 break;
             case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
@@ -205,10 +205,12 @@ ComputePipeline ComputePipelineBuilder::create(VkDevice device)
     vmaUnmapMemory(Renderer::Core::get_vma_allocator(), generated_pipeline.descriptor_buffer_allocation);
 
     // Create pipeline layout
-    VkPushConstantRange push_constant_range;
-    push_constant_range.offset = 0;
-    push_constant_range.size = push_constants_size;
-    push_constant_range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    VkPushConstantRange push_constant_range
+    {
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .offset = 0,
+        .size = static_cast<u32>(push_constants_size),
+    };
 
     VkPipelineLayoutCreateInfo compute_pipeline_layout_create_info
     {
@@ -225,21 +227,25 @@ ComputePipeline ComputePipelineBuilder::create(VkDevice device)
     VK_CHECK(vkCreatePipelineLayout(Renderer::Core::get_logical_device(), &compute_pipeline_layout_create_info, nullptr, &generated_pipeline.pipeline_layout));
 
     // Create pipeline
-    VkPipelineShaderStageCreateInfo stageinfo{};
-    stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stageinfo.pNext = nullptr;
-    stageinfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    stageinfo.module = shader_module;
-    stageinfo.pName = "main";
+    VkPipelineShaderStageCreateInfo pipeline_shader_stage_create_info
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .pNext = nullptr,
+        .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+        .module = shader_module,
+        .pName = "main",
+    };
 
-    VkComputePipelineCreateInfo computePipelineCreateInfo{};
-    computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    computePipelineCreateInfo.pNext = nullptr;
-    computePipelineCreateInfo.layout = generated_pipeline.pipeline_layout;
-    computePipelineCreateInfo.stage = stageinfo;
-    computePipelineCreateInfo.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+    VkComputePipelineCreateInfo compute_pipeline_create_info
+    {
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT,
+        .stage = pipeline_shader_stage_create_info,
+        .layout = generated_pipeline.pipeline_layout,
+    };
 
-    VK_CHECK(vkCreateComputePipelines(Renderer::Core::get_logical_device(), nullptr, 1, &computePipelineCreateInfo, nullptr, &generated_pipeline.pipeline))  ;
+    VK_CHECK(vkCreateComputePipelines(Renderer::Core::get_logical_device(), nullptr, 1, &compute_pipeline_create_info, nullptr, &generated_pipeline.pipeline))  ;
     vkDestroyShaderModule(Renderer::Core::get_logical_device(), shader_module, nullptr);
 
     return generated_pipeline;

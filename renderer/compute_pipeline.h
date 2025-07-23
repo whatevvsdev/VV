@@ -9,15 +9,14 @@
 
 struct ComputePipeline
 {
-    VkPipeline pipeline;
-    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline { VK_NULL_HANDLE };
+    VkPipelineLayout pipeline_layout { VK_NULL_HANDLE };
+    VkDescriptorSetLayout descriptor_set_layout { VK_NULL_HANDLE };
 
     // Descriptor Buffer
     VkBuffer descriptor_buffer { VK_NULL_HANDLE };
     VmaAllocation descriptor_buffer_allocation { VK_NULL_HANDLE };
 
-    VkDescriptorSetLayout descriptor_set_layout { VK_NULL_HANDLE };
-    VkDeviceSize descriptor_set_layout_size { 0 };
 
     VkDevice device { VK_NULL_HANDLE };
 
