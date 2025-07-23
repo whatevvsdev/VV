@@ -24,6 +24,10 @@ add_executable(VV main.cpp
         renderer/compute_pipeline.h
 )
 
+# Force SDL to be compiled into
+set(SDL_SHARED OFF CACHE BOOL "Disable SDL3.dll" FORCE)
+set(SDL_STATIC ON CACHE BOOL "Enable SDL3.lib" FORCE)
+
 add_subdirectory(lib)
 
 add_subdirectory(shaders)
@@ -33,8 +37,6 @@ add_dependencies(VV CompileShaders)
 set(VULKAN_SDK $ENV{VULKAN_SDK})
 set(CMAKE_PREFIX_PATH "${VULKAN_SDK}")
 
-#find_package(Vulkan REQUIRED)
-#target_link_libraries(VV PRIVATE Vulkan::Vulkan)
 target_link_libraries(VV PRIVATE volk::volk_headers)
 target_link_libraries(VV PRIVATE SDL3::SDL3)
 target_link_libraries(VV PRIVATE VulkanMemoryAllocator)
