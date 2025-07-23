@@ -30,8 +30,10 @@ enum FunctionQueueLifetime
 struct
 {
     ComputePipeline raygen_pipeline;
+    ComputePipeline intersect_pipeline;
 
     VkBuffer raygen_buffer;
+    VkDeviceSize raygen_buffer_size = sizeof(glm::vec4) * 1280 * 720;
     VmaAllocation raygen_buffer_allocation;
 
     Renderer::AllocatedImage draw_image {};
@@ -42,14 +44,12 @@ struct
     glm::mat4 camera_matrix { glm::mat4(1) };
 } compute_push_constants;
 
-void create_compute_pipeline()
+void create_raygen_pipeline()
 {
-    VkDeviceSize raygen_buffer_size = sizeof(glm::vec4) * 1280 * 720;
-
     VkBufferCreateInfo buffer_create_info
     {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = raygen_buffer_size,
+        .size = state.raygen_buffer_size,
         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT,
     };
 
@@ -63,7 +63,7 @@ void create_compute_pipeline()
 
     state.raygen_pipeline = ComputePipelineBuilder("shaders/rt_raygen.comp.spv")
         .bind_storage_image(state.draw_image.view)
-        .bind_storage_buffer(state.raygen_buffer, raygen_buffer_size)
+        .bind_storage_buffer(state.raygen_buffer, state.raygen_buffer_size)
         .set_push_constants_size(sizeof(compute_push_constants))
         .create(Renderer::Core::get_logical_device());
 
@@ -74,6 +74,21 @@ void create_compute_pipeline()
     QUEUE_FUNCTION(FunctionQueueLifetime::CORE, state.raygen_pipeline.destroy());
 }
 
+void create_intersection_pipeline()
+{
+    state.intersect_pipeline = ComputePipelineBuilder("shaders/rt_intersect.comp.spv")
+        .bind_storage_image(state.draw_image.view)
+        .bind_storage_buffer(state.raygen_buffer, state.raygen_buffer_size)
+        .set_push_constants_size(sizeof(compute_push_constants))
+        .create(Renderer::Core::get_logical_device());
+
+    /* TODO: When we are hot-reloading and live reconstructing the pipelines,
+        we cannot rely on the deletion queue (unless we can specify a key to
+        remove the pipline from it if we have to destroy the pipeline early)
+    */
+    QUEUE_FUNCTION(FunctionQueueLifetime::CORE, state.intersect_pipeline.destroy());
+}
+
 void Renderer::initialize(SDL_Window* sdl_window_ptr)
 {
     Core::initialize(sdl_window_ptr);
@@ -81,7 +96,8 @@ void Renderer::initialize(SDL_Window* sdl_window_ptr)
 
     state.draw_image = Renderer::Core::create_image(swapchain_data.surface_extent, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_IMAGE_ASPECT_COLOR_BIT, "compute_draw_image");
 
-    create_compute_pipeline();
+    create_raygen_pipeline();
+    create_intersection_pipeline();
 }
 
 void transition_image_layout(VkCommandBuffer cmd_buffer, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkAccessFlags2 src_access_mask, VkAccessFlags2 dst_access_mask, VkPipelineStageFlags2 src_stage_mask, VkPipelineStageFlags2 dst_stage_mask)
@@ -188,6 +204,7 @@ void Renderer::end_frame()
     u32 dispatch_width = std::ceil(swapchain_data.surface_extent.width / 16.0);
     u32 dispatch_height = std::ceil(swapchain_data.surface_extent.height / 16.0);
     state.raygen_pipeline.dispatch(per_frame_data.command_buffer, dispatch_width, dispatch_height, 1, &compute_push_constants);
+    state.intersect_pipeline.dispatch(per_frame_data.command_buffer, dispatch_width, dispatch_height, 1, &compute_push_constants);
 
     transition_image_layout(per_frame_data.command_buffer,
        state.draw_image.image,

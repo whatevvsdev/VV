@@ -36,5 +36,4 @@ void main()
 
     vec3 direction = generate_pinhole_ray_direction(size, push_constants.camera_matrix);
     ray_buffer.data[index] = vec4(direction, 1.0f);
-    imageStore(image, texelCoord, vec4(direction, 1.0f));
 }

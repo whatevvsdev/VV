@@ -19,7 +19,7 @@ struct
 {
     SDL_Window* window { nullptr };
 
-    glm::vec3 position {};
+    glm::vec3 position { glm::vec3(0.0f, 0.0f, 2.0f)};
     f32 pitch {};
     f32 yaw {};
     glm::mat4 matrix {};
@@ -59,7 +59,7 @@ void Game::update()
                             -(static_cast<i32>(keys[SDL_SCANCODE_W]) - static_cast<i32>(keys[SDL_SCANCODE_S])));
 
     glm::vec3 global_move = state.camera_matrix * glm::vec4(local_move, 0.0f);
-    state.position += global_move * frame_delta_ms;
+    state.position += global_move * frame_delta_ms * 0.001f;
 
     f32 mouse_dx { 0.0f };
     f32 mouse_dy { 0.0f };
