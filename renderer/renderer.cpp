@@ -171,8 +171,39 @@ void copy_image_to_image(VkCommandBuffer cmd_buffer, VkImage source, VkImage des
 void Renderer::begin_frame()
 {
     auto per_frame_data = Renderer::Core::begin_frame();
-}
 
+    ImGui::SetWindowPos(ImVec2(0, 0));
+    ImGui::BeginMainMenuBar();
+    if (ImGui::BeginMenu("Menu"))
+    {
+        //ImGui::MenuItem("(demo menu)", NULL, false, false);
+        if (ImGui::MenuItem("Open", nullptr, false, false))
+        {
+            // Todo: Add loading model options here
+        }
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Options"))
+        {
+            static bool enabled = true;
+            // ImGui::MenuItem("Enabled", "", &enabled);
+            ImGui::Checkbox("Enabled", &enabled);
+            ImGui::EndMenu();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Quit", "Alt+F4"))
+        {
+            exit(0);
+        }
+        ImGui::EndMenu();
+    }
+    ImGui::EndMainMenuBar();
+    ImGui::Begin("## Toggle mouse cursor hint", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground);
+    ImGui::SetCursorPos(ImVec2(10, 10));
+    ImGui::TextColored(ImVec4(0.0, 0.0, 0.0, 1.0), "Press TAB to toggle mouse cursor.");
+    ImGui::SetCursorPos(ImVec2(9, 9));
+    ImGui::Text("Press TAB to toggle mouse cursor.");
+    ImGui::End();
+}
 
 void Renderer::end_frame()
 {

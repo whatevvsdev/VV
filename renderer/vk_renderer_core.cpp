@@ -314,7 +314,10 @@ namespace Renderer::Core
         ImGui::CreateContext();
         QUEUE_FUNCTION(FunctionQueueLifetime::CORE, ImGui::DestroyContext());
 
-        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        auto& io = ImGui::GetIO();
+        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        io.Fonts->AddFontFromFileTTF("monofonto rg.ttf");
+
         ImGui_ImplSDL3_InitForVulkan(internal.window_ptr);
         QUEUE_FUNCTION(FunctionQueueLifetime::CORE, ImGui_ImplSDL3_Shutdown());
 

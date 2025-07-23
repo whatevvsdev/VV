@@ -26,6 +26,8 @@ struct
 
     glm::mat4 camera_matrix { glm::mat4(1) };
 
+    bool locked_mouse { false };
+
     u64 last_frame_time_query { 0 };
 } state;
 
@@ -39,11 +41,13 @@ glm::mat4 calculate_camera_matrix()
 
 void Game::init(SDL_Window* window)
 {
-    SDL_SetWindowRelativeMouseMode(window, true);
+    SDL_SetWindowRelativeMouseMode(window, state.locked_mouse);
+    SDL_SetWindowMouseGrab(window, state.locked_mouse);
     state.last_frame_time_query = SDL_GetPerformanceCounter();;
     state.window = window;
 }
 
+bool last_tabbed = false;
 void Game::update()
 {
     u64 current_frame_time_query { SDL_GetPerformanceCounter() };
@@ -65,13 +69,39 @@ void Game::update()
     f32 mouse_dy { 0.0f };
     SDL_MouseButtonFlags buttons = SDL_GetRelativeMouseState(&mouse_dx, &mouse_dy);
 
-    state.yaw += -mouse_dx * 0.1;
-    state.pitch += -mouse_dy * 0.1;
-    state.pitch = glm::clamp(state.pitch, -89.0f, 89.0f);
+    if (state.locked_mouse)
+    {
+        state.yaw += -mouse_dx * 0.1;
+        state.pitch += -mouse_dy * 0.1;
+        state.pitch = glm::clamp(state.pitch, -89.0f, 89.0f);
+    }
 
     state.camera_matrix = calculate_camera_matrix();
 
     Renderer::Cameras::set_current_camera_matrix(state.camera_matrix);
+
+    if (keys[SDL_SCANCODE_TAB])
+    {
+        if (!last_tabbed)
+        {
+            state.locked_mouse = !state.locked_mouse;
+            SDL_SetWindowRelativeMouseMode(state.window, state.locked_mouse);
+            SDL_SetWindowMouseGrab(state.window, state.locked_mouse);
+        }
+        last_tabbed = true;
+    }
+    else
+    {
+        last_tabbed = false;
+    }
+
+    if (state.locked_mouse)
+    {
+        i32 w;
+        i32 h;
+        SDL_GetWindowSizeInPixels(state.window, &w, &h);
+        SDL_WarpMouseInWindow(state.window, w * 0.5, h * 0.5);
+    }
 
     //ImGui::SetNextWindowSize(ImVec2(300.0f, 100.0f));
     ImGui::Begin("Info", nullptr, ImGuiWindowFlags_AlwaysAutoResize);

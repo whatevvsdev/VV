@@ -45,3 +45,6 @@ target_sources(VV PRIVATE
         ${DEAR_IMGUI_BACKEND_SOURCE}imgui_impl_sdl3.cpp
         ${DEAR_IMGUI_BACKEND_SOURCE}imgui_impl_vulkan.cpp
 )
+
+set(FONT_FILENAME "monofonto rg.ttf")
+configure_file(${CMAKE_SOURCE_DIR}/${FONT_FILENAME} ${CMAKE_BINARY_DIR}/${FONT_FILENAME} COPYONLY)

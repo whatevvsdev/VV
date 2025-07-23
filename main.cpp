@@ -8,8 +8,8 @@
 
 #include "imgui_impl_sdl3.h"
 
-constexpr int client_area_width { 1280 };
-constexpr int client_area_height { 720 };
+constexpr int client_area_width { 1920 };
+constexpr int client_area_height { 1080 };
 
 SDL_Window* sdl_window{ nullptr };
 
