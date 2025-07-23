@@ -37,10 +37,10 @@ add_dependencies(VV CompileShaders)
 set(VULKAN_SDK $ENV{VULKAN_SDK})
 set(CMAKE_PREFIX_PATH "${VULKAN_SDK}")
 
-target_link_libraries(VV PRIVATE volk::volk_headers)
-target_link_libraries(VV PRIVATE SDL3::SDL3)
-target_link_libraries(VV PRIVATE VulkanMemoryAllocator)
 target_link_libraries(VV PRIVATE DearImGUI)
+target_link_libraries(VV PRIVATE SDL3::SDL3)
+target_link_libraries(VV PRIVATE volk::volk_headers)
+target_link_libraries(VV PRIVATE VulkanMemoryAllocator)
 
 set(DEAR_IMGUI_BACKEND_SOURCE ${CMAKE_SOURCE_DIR}/lib/imgui/backends/)
 target_sources(VV PRIVATE
