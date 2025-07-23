@@ -17,7 +17,6 @@ struct ComputePipeline
     VkBuffer descriptor_buffer { VK_NULL_HANDLE };
     VmaAllocation descriptor_buffer_allocation { VK_NULL_HANDLE };
 
-
     VkDevice device { VK_NULL_HANDLE };
 
     VkDeviceSize push_constants_size { 0 };
@@ -33,7 +32,11 @@ struct ComputePipelineBuilder
     /* TODO: Figure out a better way of doing this, for now
         all bindings that do not match the descriptor type
         insert a VK_NULL_HANDLE into each vector below
+
+       TODO: Might be made slightly better when we access data via
+        handles rather than directly through vulkan handles
     */
+
     std::vector<VkImageView> image_views {};
     std::vector<VkBuffer> buffers {};
     std::vector<VkDeviceSize> buffer_sizes;
