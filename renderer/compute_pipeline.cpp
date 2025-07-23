@@ -248,5 +248,6 @@ ComputePipeline ComputePipelineBuilder::create(VkDevice device)
     VK_CHECK(vkCreateComputePipelines(Renderer::Core::get_logical_device(), nullptr, 1, &compute_pipeline_create_info, nullptr, &generated_pipeline.pipeline))  ;
     vkDestroyShaderModule(Renderer::Core::get_logical_device(), shader_module, nullptr);
 
+    generated_pipeline.device = device;
     return generated_pipeline;
 }
