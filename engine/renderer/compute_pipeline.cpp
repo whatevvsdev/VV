@@ -1,6 +1,6 @@
 ﻿#include "compute_pipeline.h"
 
-#include "../common/types.h"
+#include "../../common/types.h"
 #include "renderer_core.h"
 
 VkShaderModule create_shader_module(const std::vector<u8>& bytecode)

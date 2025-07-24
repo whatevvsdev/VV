@@ -7,8 +7,9 @@
 #include <span>
 #include <vector>
 
-#include "../common/types.h"
-#include "../common/io.h"
+#include "../data/magicavoxel_parser.h"
+#include "../../common/types.h"
+#include "../../common/io.h"
 
 #include "vv_vulkan.h"
 #include <vulkan/vk_enum_string_helper.h>
@@ -26,7 +27,7 @@ enum FunctionQueueLifetime
     CORE,
     RANGE
 };
-#include "../common/function_queue.h"
+#include "../../common/function_queue.h"
 
 struct
 {
@@ -38,6 +39,8 @@ struct
     VmaAllocation raygen_buffer_allocation;
 
     Renderer::AllocatedImage draw_image {};
+
+    VoxModel vox_model {};
 } state;
 
 struct
@@ -99,6 +102,10 @@ void Renderer::initialize(SDL_Window* sdl_window_ptr)
 
     create_raygen_pipeline();
     create_intersection_pipeline();
+
+    state.vox_model = VoxModels::load_model("../monu1.vox");
+
+    printf("loaded model, hopefully?");
 }
 
 void transition_image_layout(VkCommandBuffer cmd_buffer, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkAccessFlags2 src_access_mask, VkAccessFlags2 dst_access_mask, VkPipelineStageFlags2 src_stage_mask, VkPipelineStageFlags2 dst_stage_mask)

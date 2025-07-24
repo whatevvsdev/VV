@@ -7,23 +7,25 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libgcc -static-libstdc++")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 
 add_executable(VV main.cpp
-        renderer/renderer.cpp
-        renderer/renderer.h
+        engine/renderer/renderer.cpp
+        engine/renderer/renderer.h
         common/types.h
         common/io.cpp
         common/io.h
-        renderer/vk_renderer_core.cpp
-        renderer/renderer_core.h
+        engine/renderer/vk_renderer_core.cpp
+        engine/renderer/renderer_core.h
         common/function_queue.h
-        renderer/vv_vulkan.h
+        engine/renderer/vv_vulkan.h
         game/game.cpp
         game/game.h
-        renderer/cameras.cpp
-        renderer/cameras.h
-        renderer/compute_pipeline.cpp
-        renderer/compute_pipeline.h
-        renderer/profiling.cpp
-        renderer/profiling.h
+        engine/renderer/cameras.cpp
+        engine/renderer/cameras.h
+        engine/renderer/compute_pipeline.cpp
+        engine/renderer/compute_pipeline.h
+        engine/renderer/profiling.cpp
+        engine/renderer/profiling.h
+        engine/data/magicavoxel_parser.cpp
+        engine/data/magicavoxel_parser.h
 )
 
 # Force SDL to be compiled into

@@ -3,7 +3,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/ext.hpp> // perspective, translate, rotate
 
-#include "../renderer/cameras.h"
+#include "../engine/renderer/cameras.h"
 #include "SDL3/SDL_keyboard.h"
 #include "SDL3/SDL_mouse.h"
 #include "SDL3/SDL_scancode.h"

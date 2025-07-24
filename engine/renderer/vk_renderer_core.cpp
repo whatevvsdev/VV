@@ -6,8 +6,8 @@
 #include <deque>
 #include <functional>
 
-#include "../common/types.h"
-#include "../common/io.h"
+#include "../../common/types.h"
+#include "../../common/io.h"
 
 #define VOLK_IMPLEMENTATION
 #include "volk.h"
@@ -32,7 +32,7 @@ enum FunctionQueueLifetime
     SWAPCHAIN,
     RANGE
 };
-#include "../common/function_queue.h"
+#include "../../common/function_queue.h"
 
 namespace Renderer::Core
 {
