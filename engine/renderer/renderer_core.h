@@ -5,7 +5,7 @@
 #include "vv_vulkan.h"
 #include "vk_mem_alloc.h"
 #include <string>
-#include "../common/types.h"
+#include "../../common/types.h"
 
 #if RENDERER_DEBUG
 #define VK_NAME(device, handle, object_type, name) \

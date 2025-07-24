@@ -3,7 +3,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/ext.hpp> // perspective, translate, rotate
 
-#include "../renderer/cameras.h"
+#include "../engine/renderer/cameras.h"
 #include "SDL3/SDL_keyboard.h"
 #include "SDL3/SDL_mouse.h"
 #include "SDL3/SDL_scancode.h"
@@ -63,7 +63,7 @@ void Game::update()
                             -(static_cast<i32>(keys[SDL_SCANCODE_W]) - static_cast<i32>(keys[SDL_SCANCODE_S])));
 
     glm::vec3 global_move = state.camera_matrix * glm::vec4(local_move, 0.0f);
-    state.position += global_move * frame_delta_ms * 0.001f;
+    state.position += global_move * frame_delta_ms * 0.1f;
 
     f32 mouse_dx { 0.0f };
     f32 mouse_dy { 0.0f };
