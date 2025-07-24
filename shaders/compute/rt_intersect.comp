@@ -58,7 +58,7 @@ float DDA(inout IntersectionState state, Ray ray)
     const ivec3 step_direction_sign = ivec3(sign(ray.direction));
 
     vec3 t_max = vec3(0.0);
-    const vec3 t_delta = vec3(1.0f) / ray.direction;
+    const vec3 t_delta = abs(vec3(1.0f) / ray.direction);
 	
     // Calculate initial t_max
     for (int l = 0; l < 3; l++)
