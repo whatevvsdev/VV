@@ -9,6 +9,12 @@ layout(std430, set = 0, binding = 1) buffer RayGenIn
     vec4 data[];
 } ray_buffer;
 
+layout(std430, set = 0, binding = 2) buffer ModelIn
+{
+	uvec4 size;
+    uint data[];
+} model_buffer;
+
 layout( push_constant ) uniform PushConstants
 {
 	mat4 camera_matrix;
@@ -27,6 +33,83 @@ struct Ray
 	vec3 direction;
 	vec3 position;
 };
+
+struct IntersectionState
+{
+	float t;
+};
+
+uint from_3d_to_1d(ivec3 in_3d, uvec4 model_size)
+{
+	return clamp(in_3d[0] + in_3d[2] * model_size.x + in_3d[1] * model_size.x * model_size.y, 0, model_size.x * model_size.y * model_size.z);
+}
+
+float DDA(inout IntersectionState state, Ray ray)
+{
+    ivec3 voxel_position = ivec3(floor(ray.position));
+
+    // If we start inside a voxel, return
+    if (model_buffer.data[from_3d_to_1d(voxel_position, model_buffer.size)] == 1)
+    {
+        return 0.0f;
+    }
+
+    // Voxel Marching
+    const ivec3 step_direction_sign = ivec3(
+        int(sign(ray.direction.x)),
+        int(sign(ray.direction.y)),
+        int(sign(ray.direction.z))
+    );
+
+    vec3 t_max = vec3(0.0);
+    const vec3 t_delta = vec3(
+        abs(1.0 / ray.direction.x),
+        abs(1.0 / ray.direction.y),
+        abs(1.0 / ray.direction.z)
+    );
+
+    // Calculate initial t_max
+    for (int l = 0; l < 3; l++)
+    {
+        if (step_direction_sign[l] < 0)
+        {
+            t_max[l] = (ray.position[l] - float(voxel_position[l])) * t_delta[l];
+        }
+        else
+        {
+            t_max[l] = (float(voxel_position[l]) + 1.0 - ray.position	[l]) * t_delta[l];
+        }
+    }
+
+	uint check = model_buffer.size.x + model_buffer.size.y + model_buffer.size.z;
+    while (check > 0)
+    {
+        // Find the smallest t_max component
+        int axis = int(t_max.y < t_max.x);
+        if (t_max.z < t_max[axis])
+        {
+            axis = 2;
+        }
+
+        voxel_position[axis] += step_direction_sign[axis];
+        t_max[axis] += t_delta[axis];
+
+        // Check bounds
+        if (voxel_position[axis] < 0 || voxel_position[axis] >= model_buffer.size[axis])
+        {
+            return FLT_MAX;
+        }
+
+        uint world_index = from_3d_to_1d(voxel_position, model_buffer.size);
+        if (model_buffer.data[world_index] == 1)
+        {
+            return t_max[axis] - t_delta[axis];
+        }
+		check -= 1;
+    }
+	return FLT_MAX;
+}
+
 
 vec4 intersect_aabb(vec3 aabbmin, vec3 aabbmax, Ray ray)
 {
@@ -59,14 +142,20 @@ vec4 intersect_aabb(vec3 aabbmin, vec3 aabbmax, Ray ray)
 	}
 }
 
-struct IntersectionState
-{
-	float t;
-};
-
 void intersect(inout IntersectionState state, Ray ray)
 {
-	vec4 t_normal = intersect_aabb(vec3(-0.5f), vec3(0.5f), ray);
+	vec4 t_normal = intersect_aabb(vec3(0.0f), vec3(model_buffer.size), ray);
+	
+	if (t_normal.x != FLT_MAX)
+	{
+		ray.position = clamp(ray.position + ray.direction * (t_normal.r - EPSILON), vec3(EPSILON), vec3(model_buffer.size) - vec3(EPSILON));
+		float t = DDA(state, ray);
+		t_normal.x += t;
+
+		if (t == FLT_MAX)
+			t_normal.x = 10000.0f;
+	}
+
 
 	state.t = t_normal.r;
 }
@@ -85,9 +174,9 @@ void main()
 	state.t = FLT_MAX;
 	intersect(state, new_ray);
 
-	if (state.t >= 0.0)
-	{
-		imageStore(image, texelCoord, vec4(state.t, state.t, state.t, 1.0f) * 0.001f);
+	if (state.t != FLT_MAX)
+	{;
+		imageStore(image, texelCoord, vec4(state.t, state.t, state.t, 1.0f) * 0.005f);
 	}
 	else
 	{
