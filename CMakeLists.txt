@@ -22,6 +22,8 @@ add_executable(VV main.cpp
         renderer/cameras.h
         renderer/compute_pipeline.cpp
         renderer/compute_pipeline.h
+        renderer/profiling.cpp
+        renderer/profiling.h
 )
 
 # Force SDL to be compiled into

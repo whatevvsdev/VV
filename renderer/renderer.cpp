@@ -18,6 +18,7 @@
 #include <glm/mat4x4.hpp> // glm::mat4
 
 #include "compute_pipeline.h"
+#include "profiling.h"
 #include "cameras.h"
 
 enum FunctionQueueLifetime
@@ -172,6 +173,9 @@ void Renderer::begin_frame()
 {
     auto per_frame_data = Renderer::Core::begin_frame();
 
+    static bool display_cpu_queries = true;
+    static bool display_gpu_queries = true;
+
     ImGui::SetWindowPos(ImVec2(0, 0));
     ImGui::BeginMainMenuBar();
     if (ImGui::BeginMenu("Menu"))
@@ -184,9 +188,9 @@ void Renderer::begin_frame()
         ImGui::Separator();
         if (ImGui::BeginMenu("Options"))
         {
-            static bool enabled = true;
             // ImGui::MenuItem("Enabled", "", &enabled);
-            ImGui::Checkbox("Enabled", &enabled);
+            ImGui::Checkbox("CPU Profiling queries", &display_cpu_queries);
+            ImGui::Checkbox("GPU Profiling queries", &display_gpu_queries);
             ImGui::EndMenu();
         }
         ImGui::Separator();
@@ -203,13 +207,37 @@ void Renderer::begin_frame()
     ImGui::SetCursorPos(ImVec2(9, 9));
     ImGui::Text("Press TAB to toggle mouse cursor.");
     ImGui::End();
+
+    if (display_gpu_queries)
+    {
+        ImGui::Begin("GPU Timings", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
+        auto all_gpu_timings = ProfilingQueries::get_all_device_times_elapsed_ms();
+        for (auto& timing : all_gpu_timings)
+        {
+            ImGui::Text("%s 10 avg time: %.2fms", timing.name.c_str(), timing.average_10_time_ms);
+            ImGui::Text("%s        time: %.2fms", timing.name.c_str(), timing.time_ms);
+        }
+        ImGui::End();
+    }
+
+    if (display_cpu_queries)
+    {
+        ImGui::Begin("CPU Timings", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
+        auto all_cpu_timings = ProfilingQueries::get_all_host_times_elapsed_ms();
+        for (auto& timing : all_cpu_timings)
+        {
+            ImGui::Text("%s 10 avg time: %.2fms", timing.name.c_str(), timing.average_10_time_ms);
+            ImGui::Text("%s        time: %.2fms", timing.name.c_str(), timing.time_ms);
+        }
+        ImGui::End();
+    }
 }
 
 void Renderer::end_frame()
 {
     auto per_frame_data = Renderer::Core::get_current_frame_data();
     auto swapchain_data = Renderer::Core::get_swapchain_data();
-
+    ProfilingQueries::host_start("frame submit");
     compute_push_constants.camera_matrix = Renderer::Cameras::get_current_camera_data_copy().camera_matrix;
 
     transition_image_layout(per_frame_data.command_buffer,
@@ -234,8 +262,14 @@ void Renderer::end_frame()
 
     u32 dispatch_width = std::ceil(swapchain_data.surface_extent.width / 16.0);
     u32 dispatch_height = std::ceil(swapchain_data.surface_extent.height / 16.0);
+
+    ProfilingQueries::device_start("raygen", per_frame_data.command_buffer);
     state.raygen_pipeline.dispatch(per_frame_data.command_buffer, dispatch_width, dispatch_height, 1, &compute_push_constants);
+    ProfilingQueries::device_stop("raygen", per_frame_data.command_buffer);
+
+    ProfilingQueries::device_start("intersect", per_frame_data.command_buffer);
     state.intersect_pipeline.dispatch(per_frame_data.command_buffer, dispatch_width, dispatch_height, 1, &compute_push_constants);
+    ProfilingQueries::device_stop("intersect", per_frame_data.command_buffer);
 
     transition_image_layout(per_frame_data.command_buffer,
        state.draw_image.image,
@@ -259,8 +293,7 @@ void Renderer::end_frame()
        VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
     );
 
-    ImGui::ShowDemoWindow();
-
+    ProfilingQueries::host_stop("frame submit");
     Renderer::Core::end_frame();
 }
 

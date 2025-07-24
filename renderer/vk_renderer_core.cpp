@@ -21,6 +21,8 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_vulkan.h"
 
+#include "profiling.h"
+
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 
@@ -589,6 +591,8 @@ namespace Renderer::Core
         create_command_buffers();
         create_sync_objects();
         initalize_imgui();
+        ProfilingQueries::initialize(internal.physical_device, internal.device);
+        QUEUE_FUNCTION(FunctionQueueLifetime::CORE, ProfilingQueries::destroy(internal.device));
     }
 
     void terminate()
@@ -617,6 +621,7 @@ namespace Renderer::Core
         };
 
         VK_CHECK(vkBeginCommandBuffer(per_frame_data.command_buffer, &command_buffer_begin_info));
+        ProfilingQueries::reset_device_profiling_queries(per_frame_data.command_buffer);
 
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL3_NewFrame();
@@ -686,6 +691,7 @@ namespace Renderer::Core
 
         if (present_result == VK_ERROR_OUT_OF_DATE_KHR)
             resize_swapchain();
+        ProfilingQueries::end_frame();
     }
 
     VkDevice get_logical_device()
