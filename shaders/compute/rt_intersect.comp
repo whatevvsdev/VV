@@ -41,7 +41,7 @@ struct IntersectionState
 
 uint from_3d_to_1d(ivec3 in_3d, uvec4 model_size)
 {
-	return clamp(in_3d[0] + in_3d[2] * model_size.x + in_3d[1] * model_size.x * model_size.y, 0, model_size.x * model_size.y * model_size.z);
+	return in_3d[0] + in_3d[2] * model_size.x + in_3d[1] * model_size.x * model_size.y;
 }
 
 float DDA(inout IntersectionState state, Ray ray)
