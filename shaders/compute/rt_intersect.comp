@@ -55,19 +55,11 @@ float DDA(inout IntersectionState state, Ray ray)
     }
 
     // Voxel Marching
-    const ivec3 step_direction_sign = ivec3(
-        int(sign(ray.direction.x)),
-        int(sign(ray.direction.y)),
-        int(sign(ray.direction.z))
-    );
+    const ivec3 step_direction_sign = ivec3(sign(ray.direction));
 
     vec3 t_max = vec3(0.0);
-    const vec3 t_delta = vec3(
-        abs(1.0 / ray.direction.x),
-        abs(1.0 / ray.direction.y),
-        abs(1.0 / ray.direction.z)
-    );
-
+    const vec3 t_delta = vec3(1.0f) / ray.direction;
+	
     // Calculate initial t_max
     for (int l = 0; l < 3; l++)
     {
