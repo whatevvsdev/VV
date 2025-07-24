@@ -58,7 +58,7 @@ void ComputePipeline::destroy()
     vkDestroyPipeline(Renderer::Core::get_logical_device(), pipeline, nullptr);
 }
 
-ComputePipelineBuilder::ComputePipelineBuilder(const FSPath& path)
+ComputePipelineBuilder::ComputePipelineBuilder(const std::filesystem::path& path)
 {
     auto comp_binary = IO::read_binary_file(path);
 

@@ -167,7 +167,7 @@ void main()
 	intersect(state, new_ray);
 
 	if (state.t != FLT_MAX)
-	{;
+	{
 		imageStore(image, texelCoord, vec4(state.t, state.t, state.t, 1.0f) * 0.005f);
 	}
 	else

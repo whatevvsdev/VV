@@ -60,10 +60,23 @@ VVBuffer create_buffer(VkDeviceSize size, bool cpu_to_gpu = false)
         .usage = cpu_to_gpu ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_AUTO,
     };
 
-
     vmaCreateBuffer(Renderer::Core::get_vma_allocator(), &buffer_create_info, &vma_allocation_create_info, &created_buffer.handle, &created_buffer.allocation, nullptr);
     return created_buffer;
 }
+
+/* TODO:
+    This and its usage is a bit of a mess
+*/
+#define HOTRELOAD 1
+#if HOTRELOAD
+#define HOTRELOAD_WORKING_DIRECTORY "../"
+// Have to use \\ for windows
+#define SHADER_COMPILE_SCRIPT_PATH "\"..\\compile_shaders.bat\""
+#define SHADER_SOURCE_PATH HOTRELOAD_WORKING_DIRECTORY "shaders/compute/"
+#define SHADER_COMPILED_PATH HOTRELOAD_WORKING_DIRECTORY "shaders/spirv-out/"
+#else
+#define SHADER_COMPILED_PATH shaders/
+#endif
 
 struct
 {
@@ -89,7 +102,7 @@ void create_raygen_pipeline()
     state.raygen_buffer = create_buffer(sizeof(glm::vec4) * extent.width * extent.height);
     QUEUE_FUNCTION(FunctionQueueLifetime::CORE, state.raygen_buffer.destroy());
 
-    state.raygen_pipeline = ComputePipelineBuilder("shaders/rt_raygen.comp.spv")
+    state.raygen_pipeline = ComputePipelineBuilder(SHADER_COMPILED_PATH "rt_raygen.comp.spv")
         .bind_storage_image(state.draw_image.view)
         .bind_storage_buffer(state.raygen_buffer.handle, state.raygen_buffer.size)
         .set_push_constants_size(sizeof(compute_push_constants))
@@ -139,18 +152,29 @@ void create_intersection_pipeline()
 
     vmaUnmapMemory(Renderer::Core::get_vma_allocator(), state.voxel_model_buffer.allocation);
 
-    state.intersect_pipeline = ComputePipelineBuilder("shaders/rt_intersect.comp.spv")
+    state.intersect_pipeline = ComputePipelineBuilder( SHADER_COMPILED_PATH "rt_intersect.comp.spv")
         .bind_storage_image(state.draw_image.view)
         .bind_storage_buffer(state.raygen_buffer.handle, state.raygen_buffer.size)
         .bind_storage_buffer(state.voxel_model_buffer.handle, state.voxel_model_buffer.size)
         .set_push_constants_size(sizeof(compute_push_constants))
         .create(Renderer::Core::get_logical_device());
 
-    /* TODO: When we are hot-reloading and live reconstructing the pipelines,
-        we cannot rely on the deletion queue (unless we can specify a key to
-        remove the pipline from it if we have to destroy the pipeline early)
-    */
-    QUEUE_FUNCTION(FunctionQueueLifetime::CORE, state.intersect_pipeline.destroy());
+#if HOTRELOAD
+    IO::watch_for_file_update(SHADER_SOURCE_PATH "rt_intersect.comp",
+        []()
+        {
+            system(SHADER_COMPILE_SCRIPT_PATH);
+
+            printf("rebuild lmaoege\n");
+            state.intersect_pipeline.destroy();
+            state.intersect_pipeline = ComputePipelineBuilder(SHADER_COMPILED_PATH "rt_intersect.comp.spv")
+                .bind_storage_image(state.draw_image.view)
+                .bind_storage_buffer(state.raygen_buffer.handle, state.raygen_buffer.size)
+                .bind_storage_buffer(state.voxel_model_buffer.handle, state.voxel_model_buffer.size)
+                .set_push_constants_size(sizeof(compute_push_constants))
+                .create(Renderer::Core::get_logical_device());
+        });
+#endif
 }
 
 void Renderer::initialize(SDL_Window* sdl_window_ptr)
@@ -362,6 +386,12 @@ void Renderer::end_frame()
 
 void Renderer::terminate()
 {
+    /* TODO: doing manually because of hotreloading,
+        we currently need to destroy and create pipelines before
+        FunctionQueueLifetime::CORE lifetime is up. Maybe some
+        key system to remove stuff from the queue if need be?
+    */
+    state.intersect_pipeline.destroy();
     QUEUE_FLUSH(FunctionQueueLifetime::CORE);
 
     Renderer::Core::terminate();

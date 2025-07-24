@@ -44,7 +44,7 @@ struct ComputePipelineBuilder
     VkShaderModule shader_module { VK_NULL_HANDLE };
     VkDeviceSize push_constants_size { 0 };
 
-    ComputePipelineBuilder(const FSPath& path);
+    ComputePipelineBuilder(const std::filesystem::path& path);
     ComputePipelineBuilder& bind_storage_image(VkImageView image_view);
     ComputePipelineBuilder& bind_storage_buffer(VkBuffer buffer, VkDeviceSize buffer_size);
     ComputePipelineBuilder& set_push_constants_size(VkDeviceSize size);

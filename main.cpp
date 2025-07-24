@@ -2,6 +2,7 @@
 
 #include "engine/renderer/renderer.h"
 #include "game/game.h"
+#include "common/io.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -45,6 +46,7 @@ int main( int argc, char* args[] )
         bool quit{ false };
         while(!quit)
         {
+            IO::update();
             Renderer::begin_frame();
 
             while(SDL_PollEvent( &e ))

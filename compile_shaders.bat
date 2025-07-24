@@ -2,7 +2,7 @@
 
 set SHADER_COMPILER=%VULKAN_SDK%\Bin\glslc.exe
 
-set ROOT_FOLDER="shaders"
+set ROOT_FOLDER=%~dp0shaders
 set OUTPUT_FOLDER=%ROOT_FOLDER%\spirv-out
 set EXTENSIONS=comp frag vert
 
