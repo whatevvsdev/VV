@@ -46,16 +46,72 @@ namespace IO
         return buffer;
     }
 
-    void watch_for_file_update(const std::filesystem::path& path, std::function<void()>&& on_update_callback)
+    std::vector<std::filesystem::path> parse_dependencies_from_file(const std::string& file_data)
+    {
+        usize target_end_index = file_data.find(": ") + 1; // Skip colon and next white space
+        std::string input = file_data.substr(target_end_index, file_data.size());
+
+        // Normalize slash style used
+        for (char& c : input)
+        {
+            if (c == '/')
+                c = '\\';
+        }
+
+        std::vector<std::filesystem::path> paths;
+
+        usize i { 0 };
+        while (i < input.size())
+        {
+            if (i + 2 < input.size() && std::isalpha(input[i]) && input[i + 1] == ':' && input[i + 2] == '\\')
+            {
+                usize start { i };
+                i += 3;
+
+                // We are within the string, and the current character is printable
+                while (i < input.size() && std::isprint(input[i]) && input[i] != ' ')
+                {
+                    i++;
+                }
+
+                std::filesystem::path path (input.substr(start, i - start));
+
+                paths.push_back(path);
+                continue;
+            }
+            i++;
+        }
+
+        return paths;
+    }
+
+    void watch_for_file_update(const std::filesystem::path& path, const std::function<void()>& on_update_callback)
     {
         auto entry = internal.watched_files.find(path);
 
         if (entry == internal.watched_files.end())
         {
+            std::filesystem::path auto_full_path(path);
+
             internal.watched_files.insert({ path, {path, std::vector<std::function<void()>>(), 0} });
             entry = internal.watched_files.find(path);
             entry->second.last_write_time = static_cast<u64>(std::filesystem::last_write_time(path).time_since_epoch().count());
-            printf("last write time of file %ls was %llu\n.", path.c_str(), entry->second.last_write_time);
+
+            std::filesystem::path dependencies_file = (path.string() + ".dependencies");
+            if (std::filesystem::exists(dependencies_file))
+            {
+                auto dependencies_file_data = read_binary_file(dependencies_file);
+                std::string depfile_content(reinterpret_cast<const char*>(dependencies_file_data.data()), dependencies_file_data.size());
+                auto dependencies = parse_dependencies_from_file(depfile_content);
+
+                for (const auto& dependency : dependencies)
+                {
+                    if (dependency.filename() != path.filename())
+                    {
+                        watch_for_file_update(dependency, on_update_callback);
+                    }
+                }
+            }
         }
 
         entry->second.on_update_callbacks.push_back(on_update_callback);
