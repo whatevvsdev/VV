@@ -165,7 +165,6 @@ void create_intersection_pipeline()
         {
             system(SHADER_COMPILE_SCRIPT_PATH);
 
-            printf("rebuild lmaoege\n");
             state.intersect_pipeline.destroy();
             state.intersect_pipeline = ComputePipelineBuilder(SHADER_COMPILED_PATH "rt_intersect.comp.spv")
                 .bind_storage_image(state.draw_image.view)
