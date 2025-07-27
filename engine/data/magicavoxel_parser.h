@@ -472,7 +472,6 @@ namespace MagicaVoxel
 	{
 		i32 model_id;
 		glm::mat4 transform;
-
 	};
 
 	struct Scene
@@ -490,10 +489,6 @@ namespace MagicaVoxel
 	namespace Models
 	{
 		Model load_model(const std::filesystem::path& model_path);
-	}
-
-	namespace Scenes
-	{
-		Scene load_scene(const std::filesystem::path& scene_path);
+		Scene parse_file(const std::filesystem::path& file_path);
 	}
 }

@@ -87,8 +87,6 @@ struct
     VVBuffer raygen_buffer;
 
     Renderer::AllocatedImage draw_image {};
-
-    MagicaVoxel::Model vox_model {};
 } state;
 
 struct
@@ -117,8 +115,9 @@ void create_raygen_pipeline()
 
 void create_intersection_pipeline()
 {
-    state.vox_model = MagicaVoxel::Models::load_model("../test_model.vox");
-    auto model_size_data = state.vox_model.sizes[0];
+    auto scene = MagicaVoxel::Models::parse_file("../test_model.vox");
+    //auto vox_model2 = MagicaVoxel::Models::load_model("../test_model.vox");
+    auto model_size_data = scene.sizes[0];
     auto model_size_in_voxels = model_size_data.size_x * model_size_data.size_y * model_size_data.size_z;
     auto model_size_in_bytes = sizeof(u32) * model_size_in_voxels;
 
@@ -135,7 +134,7 @@ void create_intersection_pipeline()
 
     std::vector<u32> voxels(model_size_in_voxels);
     memset(voxels.data(), 0, sizeof(u32) * model_size_in_voxels);
-    for (auto voxel : state.vox_model.xyzis[0].voxels)
+    for (auto voxel : scene.xyzis[0].voxels)
     {
         u32 index = voxel.pos_x + voxel.pos_y * model_size_data.size_x + voxel.pos_z * model_size_data.size_x * model_size_data.size_z; // MagicaVoxel uses a difference space!
         voxels[index] = 1;
