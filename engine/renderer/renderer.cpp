@@ -117,7 +117,7 @@ void create_raygen_pipeline()
 
 void create_intersection_pipeline()
 {
-    state.vox_model = MagicaVoxel::load_model("../monu1.vox");
+    state.vox_model = MagicaVoxel::Models::load_model("../test_model.vox");
     auto model_size_data = state.vox_model.sizes[0];
     auto model_size_in_voxels = model_size_data.size_x * model_size_data.size_y * model_size_data.size_z;
     auto model_size_in_bytes = sizeof(u32) * model_size_in_voxels;
@@ -133,7 +133,7 @@ void create_intersection_pipeline()
     model_header.size_y = model_size_data.size_z; // MagicaVoxel uses a difference space!
     model_header.size_z = model_size_data.size_y; // MagicaVoxel uses a difference space!
 
-    std::vector<u32> voxels(model_size_in_bytes);
+    std::vector<u32> voxels(model_size_in_voxels);
     memset(voxels.data(), 0, sizeof(u32) * model_size_in_voxels);
     for (auto voxel : state.vox_model.xyzis[0].voxels)
     {

@@ -168,7 +168,8 @@ void main()
 
 	if (state.t != FLT_MAX)
 	{
-		imageStore(image, texelCoord, vec4(state.t, state.t, state.t, 1.0f) * 0.005f);
+		float max_depth_length = max(model_buffer.size.x, max(model_buffer.size.y, model_buffer.size.z)) + 256.0f;
+		imageStore(image, texelCoord, vec4(state.t, state.t, state.t, 1.0f) / max_depth_length);
 	}
 	else
 	{
