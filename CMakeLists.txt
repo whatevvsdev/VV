@@ -24,8 +24,6 @@ add_executable(VV main.cpp
         engine/renderer/compute_pipeline.h
         engine/renderer/profiling.cpp
         engine/renderer/profiling.h
-        engine/data/magicavoxel_parser.cpp
-        engine/data/magicavoxel_parser.h
 )
 
 # Force SDL to be compiled into
@@ -33,6 +31,7 @@ set(SDL_SHARED OFF CACHE BOOL "Disable SDL3.dll" FORCE)
 set(SDL_STATIC ON CACHE BOOL "Enable SDL3.lib" FORCE)
 
 add_subdirectory(lib)
+target_include_directories(VV PRIVATE lib/opengametools/src)
 
 add_subdirectory(shaders)
 add_dependencies(VV CompileShaders)

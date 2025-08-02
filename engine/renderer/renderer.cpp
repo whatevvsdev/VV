@@ -7,7 +7,6 @@
 #include <span>
 #include <vector>
 
-#include "../data/magicavoxel_parser.h"
 #include "../../common/types.h"
 #include "../../common/io.h"
 
@@ -17,10 +16,14 @@
 #include "imgui.h"
 #include "SDL3/SDL_vulkan.h"
 #include <glm/mat4x4.hpp> // glm::mat4
+#include <glm/gtc/type_ptr.hpp>
 
 #include "compute_pipeline.h"
 #include "profiling.h"
 #include "cameras.h"
+
+#define OGT_VOX_IMPLEMENTATION
+#include <ogt_vox.h>
 
 enum FunctionQueueLifetime
 {
@@ -115,41 +118,92 @@ void create_raygen_pipeline()
 
 void create_intersection_pipeline()
 {
-    auto scene = MagicaVoxel::Models::parse_file("../test_model.vox");
-    //auto vox_model2 = MagicaVoxel::Models::load_model("../test_model.vox");
-    auto model_size_data = scene.sizes[0];
-    auto model_size_in_voxels = model_size_data.size_x * model_size_data.size_y * model_size_data.size_z;
-    auto model_size_in_bytes = sizeof(u32) * model_size_in_voxels;
+    auto ogt_file = IO::read_binary_file("../test_model.vox");
+    const ogt_vox_scene* scene = ogt_vox_read_scene(ogt_file.data(), ogt_file.size());
 
-    struct ModelHeader
+    struct alignas(16) ModelHeader
     {
-        u32 size_x;
-        u32 size_y;
-        u32 size_z;
-        u32 dummy;
-    } model_header;
-    model_header.size_x = model_size_data.size_x;
-    model_header.size_y = model_size_data.size_z; // MagicaVoxel uses a difference space!
-    model_header.size_z = model_size_data.size_y; // MagicaVoxel uses a difference space!
+        glm::ivec4 index_and_size;
+        glm::mat4 inverse_transform;
+    };
 
-    std::vector<u32> voxels(model_size_in_voxels);
-    memset(voxels.data(), 0, sizeof(u32) * model_size_in_voxels);
-    for (auto voxel : scene.xyzis[0].voxels)
+    ModelHeader headers[8];
+    for (i32 i = 0; i < 8; i++)
     {
-        u32 index = voxel.pos_x + voxel.pos_y * model_size_data.size_x + voxel.pos_z * model_size_data.size_x * model_size_data.size_z; // MagicaVoxel uses a difference space!
-        voxels[index] = 1;
+        headers[i].index_and_size = glm::ivec4(-1, -1, -1, -1);
+        headers[i].inverse_transform = glm::mat4(1.0f);
     }
 
-    state.voxel_model_buffer = create_buffer(sizeof(ModelHeader) + model_size_in_bytes, true);
+    u32 combined_model_size_in_voxels { 0 };
+    u32 combined_model_size_in_bytes { 0 };
+
+    for (u32 i = 0u; i < scene->num_instances && i < 8u; i++)
+    {
+        const auto& instance = scene->instances[i];
+        const auto& model = scene->models[instance.model_index];
+        const auto size = glm::ivec3(model->size_x, model->size_y, model->size_z);
+
+        glm::mat4 transform = glm::make_mat4(&instance.transform.m00);
+
+        glm::mat4 axis_correction = glm::mat4(
+            glm::vec4(1, 0,  0, 0),  // X stays X
+            glm::vec4(0, 0,  -1, 0),  // Y becomes Z
+            glm::vec4(0,  1, 0, 0),  // Z becomes -Y
+            glm::vec4(0, 0,  0, 1)   // translation
+        );
+
+        transform = axis_correction * transform;
+        headers[i].index_and_size = glm::ivec4(i, size.x, size.y, size.z);
+        headers[i].inverse_transform = glm::inverse(transform);
+
+        auto model_size_in_voxels = size.x * size.y * size.z;
+        auto model_size_in_bytes = sizeof(u32) * model_size_in_voxels;
+
+        combined_model_size_in_voxels += model_size_in_voxels;
+        combined_model_size_in_bytes += model_size_in_bytes;
+    }
+
+    std::vector<u32> voxels(combined_model_size_in_voxels);
+    memset(voxels.data(), 0, sizeof(u32) * combined_model_size_in_voxels);
+    i32 offset = 0;
+
+    u32 model_offsets[8];
+
+    for (u32 i = 0u; i < scene->num_models; i++)
+    {
+        const auto& model = scene->models[i];
+        const auto size = glm::ivec3(model->size_x, model->size_y, model->size_z);
+
+        for (u32 v = 0u; v < size.x * size.y * size.z; v++)
+        {
+            u32 source_x = (v % size.x);
+            u32 source_y = (v / size.x % size.y);
+            u32 source_z = (v / (size.x * size.y)) % size.z;
+
+            //u32 index_1d = offset + source_x + source_y * size.x + source_z * size.x * size.y; // MagicaVoxel uses a difference space!
+            voxels[v + offset] = model->voxel_data[v]; // Might be sideways
+        }
+        model_offsets[i] = offset;
+        offset += size.x * size.y * size.z;
+    }
+
+    for (u32 i = 0u; i < scene->num_instances && i < 8u; i++)
+    {
+        headers[i].index_and_size.r = static_cast<i32>(model_offsets[scene->instances[i].model_index]);
+    }
+
+    state.voxel_model_buffer = create_buffer(sizeof(ModelHeader) * 8 + combined_model_size_in_bytes, true);
     QUEUE_FUNCTION(FunctionQueueLifetime::CORE, state.voxel_model_buffer.destroy());
 
     u8* mapped_data;
     vmaMapMemory(Renderer::Core::get_vma_allocator(), state.voxel_model_buffer.allocation, reinterpret_cast<void**>(&mapped_data));
 
-    memcpy(mapped_data, &model_header, sizeof(ModelHeader));
-    memcpy(mapped_data + sizeof(ModelHeader), voxels.data(), voxels.size() * sizeof(u32));
+    memcpy(mapped_data, headers, sizeof(ModelHeader) * 8);
+    memcpy(mapped_data + (sizeof(ModelHeader) * 8), voxels.data(), voxels.size() * sizeof(u32));
 
     vmaUnmapMemory(Renderer::Core::get_vma_allocator(), state.voxel_model_buffer.allocation);
+
+    ogt_vox_destroy_scene(scene);
 
     state.intersect_pipeline = ComputePipelineBuilder( SHADER_COMPILED_PATH "rt_intersect.comp.spv")
         .bind_storage_image(state.draw_image.view)

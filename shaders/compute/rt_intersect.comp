@@ -1,5 +1,7 @@
 #version 460
 
+#include "common.comph"
+
 layout (local_size_x = 16, local_size_y = 16) in;
 
 layout(rgba16f,set = 0, binding = 0) uniform image2D image;
@@ -9,9 +11,15 @@ layout(std430, set = 0, binding = 1) buffer RayGenIn
     vec4 data[];
 } ray_buffer;
 
+struct ModelHeader
+{
+	ivec4 index_and_size;
+	mat4 inverse_transform;
+};
+
 layout(std430, set = 0, binding = 2) buffer ModelIn
 {
-	uvec4 size;
+	ModelHeader headers[8];
     uint data[];
 } model_buffer;
 
@@ -37,43 +45,33 @@ struct Ray
 struct IntersectionState
 {
 	float t;
+	vec3 debug_float;
 };
 
-uint from_3d_to_1d(ivec3 in_3d, uvec4 model_size)
+uint from_3d_to_1d(ivec3 in_3d, ivec3 model_size, int model_offset)
 {
-	return in_3d[0] + in_3d[2] * model_size.x + in_3d[1] * model_size.x * model_size.y;
+	return model_offset + (in_3d[0] + in_3d[1] * model_size.x + in_3d[2] * model_size.x * model_size.y);
 }
 
-float DDA(inout IntersectionState state, Ray ray)
+float DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3 voxel_start_position)
 {
-    ivec3 voxel_position = ivec3(floor(ray.position));
+    ivec3 voxel_position = voxel_start_position;
+	ivec3 size = header.index_and_size.gba;
 
     // If we start inside a voxel, return
-    if (model_buffer.data[from_3d_to_1d(voxel_position, model_buffer.size)] == 1)
+    if (model_buffer.data[from_3d_to_1d(voxel_position, size, header.index_and_size.x)] != 0)
     {
         return 0.0f;
     }
 
+	//state.debug_float.rgb = voxel_position;
+
     // Voxel Marching
-    const ivec3 step_direction_sign = ivec3(sign(ray.direction));
-
-    vec3 t_max = vec3(0.0);
+	const ivec3 t_sign = ivec3(sign(ray.direction));
     const vec3 t_delta = abs(vec3(1.0f) / ray.direction);
-	
-    // Calculate initial t_max
-    for (int l = 0; l < 3; l++)
-    {
-        if (step_direction_sign[l] < 0)
-        {
-            t_max[l] = (ray.position[l] - float(voxel_position[l])) * t_delta[l];
-        }
-        else
-        {
-            t_max[l] = (float(voxel_position[l]) + 1.0 - ray.position	[l]) * t_delta[l];
-        }
-    }
+	vec3 t_max = abs(fract(ray.position) - max(t_sign, vec3(0))) * t_delta;
 
-	uint check = model_buffer.size.x + model_buffer.size.y + model_buffer.size.z;
+	uint check = size.x + size.y + size.z;
     while (check > 0)
     {
         // Find the smallest t_max component
@@ -83,17 +81,17 @@ float DDA(inout IntersectionState state, Ray ray)
             axis = 2;
         }
 
-        voxel_position[axis] += step_direction_sign[axis];
+        voxel_position[axis] += t_sign[axis];
         t_max[axis] += t_delta[axis];
 
         // Check bounds
-        if (voxel_position[axis] < 0 || voxel_position[axis] >= model_buffer.size[axis])
-        {
-            return FLT_MAX;
+		if (voxel_position[axis] < 0 || voxel_position[axis] >= size[axis])
+		{
+			return FLT_MAX;
         }
 
-        uint world_index = from_3d_to_1d(voxel_position, model_buffer.size);
-        if (model_buffer.data[world_index] == 1)
+        uint world_index = from_3d_to_1d(voxel_position, size, header.index_and_size.x);
+        if (model_buffer.data[world_index] != 0)
         {
             return t_max[axis] - t_delta[axis];
         }
@@ -122,10 +120,11 @@ vec4 intersect_aabb(vec3 aabbmin, vec3 aabbmax, Ray ray)
 		{
 			axis = 2;
 		};
+
 		float norm = normal[axis];
 		normal = vec3(0.0f);
 		normal[axis] = norm;
-			
+
 		return vec4(tmin, normal);
 	}
 	else
@@ -136,20 +135,48 @@ vec4 intersect_aabb(vec3 aabbmin, vec3 aabbmax, Ray ray)
 
 void intersect(inout IntersectionState state, Ray ray)
 {
-	vec4 t_normal = intersect_aabb(vec3(0.0f), vec3(model_buffer.size), ray);
-	
-	if (t_normal.x != FLT_MAX)
+	for(int i = 0; i < 8; i++)
 	{
-		ray.position = clamp(ray.position + ray.direction * (t_normal.r - EPSILON), vec3(EPSILON), vec3(model_buffer.size) - vec3(EPSILON));
-		float t = DDA(state, ray);
-		t_normal.x += t;
+		int header_index = model_buffer.headers[i].index_and_size.x;
+		ivec3 model_size = model_buffer.headers[i].index_and_size.yzw;
+		if (header_index != -1)
+		{
+			vec3 half_size = vec3(model_size) * 0.5f;
 
-		if (t == FLT_MAX)
-			t_normal.x = 10000.0f;
+			Ray aabb_ray = ray;
+			aabb_ray.position = (model_buffer.headers[i].inverse_transform * vec4(aabb_ray.position, 1.0f)).rgb;
+			aabb_ray.direction = normalize(model_buffer.headers[i].inverse_transform * vec4(aabb_ray.direction, 0.0f)).rgb;
+
+			// If not inside the AABB
+			if (aabb_ray.position != clamp(aabb_ray.position, -half_size, half_size))
+			{
+				vec4 t_normal = intersect_aabb(-half_size, half_size, aabb_ray);
+
+				if (t_normal.x < state.t)
+				{
+					vec3 hit_pos = ray.position + ray.direction * (t_normal.r - EPSILON);
+					vec3 in_volume_position = (model_buffer.headers[i].inverse_transform * vec4(hit_pos, 1.0f)).xyz + half_size;
+					ivec3 voxel_position = ivec3(floor(in_volume_position));
+
+					Ray dda_ray;
+					dda_ray.position = clamp(in_volume_position, vec3(EPSILON), model_size - vec3(EPSILON));;
+					dda_ray.direction = aabb_ray.direction;
+
+					voxel_position = clamp(voxel_position, ivec3(0), ivec3(model_size) - ivec3(1));
+
+					float t = DDA(state, dda_ray, model_buffer.headers[i], voxel_position);
+					t_normal.x += t;
+
+					if (t_normal.x < state.t)
+					{
+						state.t = min(state.t, t_normal.x);
+					}
+
+					state.debug_float = vec3(t * 0.0001f);
+				}
+			}
+		}
 	}
-
-
-	state.t = t_normal.r;
 }
 
 void main()
@@ -168,11 +195,11 @@ void main()
 
 	if (state.t != FLT_MAX)
 	{
-		float max_depth_length = max(model_buffer.size.x, max(model_buffer.size.y, model_buffer.size.z)) + 256.0f;
-		imageStore(image, texelCoord, vec4(state.t, state.t, state.t, 1.0f) / max_depth_length);
+		float max_depth_length = 512.0f;//max(model_buffer.size.x, max(model_buffer.size.y, model_buffer.size.z)) + 256.0f;
+		imageStore(image, texelCoord, vec4(state.debug_float, 1.0f));
 	}
 	else
 	{
-    	imageStore(image, texelCoord, ray_buffer.data[index]);
+    	imageStore(image, texelCoord, ray_buffer.data[index] * 0.5f + vec4(0.5f));
 	}
 }
