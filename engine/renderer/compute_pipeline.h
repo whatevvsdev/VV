@@ -46,7 +46,7 @@ struct ComputePipelineBuilder
 
     ComputePipelineBuilder(const std::filesystem::path& path);
     ComputePipelineBuilder& bind_storage_image(VkImageView image_view);
-    ComputePipelineBuilder& bind_storage_buffer(VkBuffer buffer, VkDeviceSize buffer_size);
+    ComputePipelineBuilder& bind_storage_buffer(const std::string& buffer_name);
     ComputePipelineBuilder& set_push_constants_size(VkDeviceSize size);
     ComputePipeline create(VkDevice device);
 };

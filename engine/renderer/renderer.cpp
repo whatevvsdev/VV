@@ -18,6 +18,7 @@
 #include <glm/mat4x4.hpp> // glm::mat4
 #include <glm/gtc/type_ptr.hpp>
 
+#include "device_resources.h"
 #include "compute_pipeline.h"
 #include "profiling.h"
 #include "cameras.h"
@@ -32,40 +33,7 @@ enum FunctionQueueLifetime
 };
 #include "../../common/function_queue.h"
 
-// TODO: Move this elsewhere
-struct VVBuffer
-{
-    VkBuffer handle { VK_NULL_HANDLE };
-    VkDeviceSize size { 0 };
-    VmaAllocation allocation { VK_NULL_HANDLE };
 
-    void destroy();
-};
-
-void VVBuffer::destroy()
-{
-    vmaDestroyBuffer(Renderer::Core::get_vma_allocator(), handle, allocation);
-}
-
-VVBuffer create_buffer(VkDeviceSize size, bool cpu_to_gpu = false)
-{
-    VVBuffer created_buffer {};
-
-    VkBufferCreateInfo buffer_create_info
-    {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = size,
-        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT,
-    };
-
-    VmaAllocationCreateInfo vma_allocation_create_info
-    {
-        .usage = cpu_to_gpu ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_AUTO,
-    };
-
-    vmaCreateBuffer(Renderer::Core::get_vma_allocator(), &buffer_create_info, &vma_allocation_create_info, &created_buffer.handle, &created_buffer.allocation, nullptr);
-    return created_buffer;
-}
 
 /* TODO:
     This and its usage is a bit of a mess
@@ -86,8 +54,8 @@ struct
     ComputePipeline raygen_pipeline;
     ComputePipeline intersect_pipeline;
 
-    VVBuffer voxel_model_buffer;
-    VVBuffer raygen_buffer;
+    //VVBuffer voxel_model_buffer;
+    //VVBuffer raygen_buffer;
 
     Renderer::AllocatedImage draw_image {};
 } state;
@@ -100,12 +68,12 @@ struct
 void create_raygen_pipeline()
 {
     auto& extent = Renderer::Core::get_swapchain_data().surface_extent;
-    state.raygen_buffer = create_buffer(sizeof(glm::vec4) * extent.width * extent.height);
-    QUEUE_FUNCTION(FunctionQueueLifetime::CORE, state.raygen_buffer.destroy());
+
+    DeviceResources::create_buffer("raygen_buffer", sizeof(glm::vec4) * extent.width * extent.height);
 
     state.raygen_pipeline = ComputePipelineBuilder(SHADER_COMPILED_PATH "rt_raygen.comp.spv")
         .bind_storage_image(state.draw_image.view)
-        .bind_storage_buffer(state.raygen_buffer.handle, state.raygen_buffer.size)
+        .bind_storage_buffer("raygen_buffer")
         .set_push_constants_size(sizeof(compute_push_constants))
         .create(Renderer::Core::get_logical_device());
 
@@ -192,23 +160,22 @@ void create_intersection_pipeline()
         headers[i].index_and_size.r = static_cast<i32>(model_offsets[scene->instances[i].model_index]);
     }
 
-    state.voxel_model_buffer = create_buffer(sizeof(ModelHeader) * 8 + combined_model_size_in_bytes, true);
-    QUEUE_FUNCTION(FunctionQueueLifetime::CORE, state.voxel_model_buffer.destroy());
+    auto created_buffer = DeviceResources::create_buffer("voxel_data", sizeof(ModelHeader) * 8 + combined_model_size_in_bytes, true);
 
     u8* mapped_data;
-    vmaMapMemory(Renderer::Core::get_vma_allocator(), state.voxel_model_buffer.allocation, reinterpret_cast<void**>(&mapped_data));
+    vmaMapMemory(Renderer::Core::get_vma_allocator(), created_buffer.allocation, reinterpret_cast<void**>(&mapped_data));
 
     memcpy(mapped_data, headers, sizeof(ModelHeader) * 8);
     memcpy(mapped_data + (sizeof(ModelHeader) * 8), voxels.data(), voxels.size() * sizeof(u32));
 
-    vmaUnmapMemory(Renderer::Core::get_vma_allocator(), state.voxel_model_buffer.allocation);
+    vmaUnmapMemory(Renderer::Core::get_vma_allocator(), created_buffer.allocation);
 
     ogt_vox_destroy_scene(scene);
 
     state.intersect_pipeline = ComputePipelineBuilder( SHADER_COMPILED_PATH "rt_intersect.comp.spv")
         .bind_storage_image(state.draw_image.view)
-        .bind_storage_buffer(state.raygen_buffer.handle, state.raygen_buffer.size)
-        .bind_storage_buffer(state.voxel_model_buffer.handle, state.voxel_model_buffer.size)
+        .bind_storage_buffer("raygen_buffer")
+        .bind_storage_buffer("voxel_data")
         .set_push_constants_size(sizeof(compute_push_constants))
         .create(Renderer::Core::get_logical_device());
 
@@ -221,8 +188,8 @@ void create_intersection_pipeline()
             state.intersect_pipeline.destroy();
             state.intersect_pipeline = ComputePipelineBuilder(SHADER_COMPILED_PATH "rt_intersect.comp.spv")
                 .bind_storage_image(state.draw_image.view)
-                .bind_storage_buffer(state.raygen_buffer.handle, state.raygen_buffer.size)
-                .bind_storage_buffer(state.voxel_model_buffer.handle, state.voxel_model_buffer.size)
+                .bind_storage_buffer("raygen_buffer")
+                .bind_storage_buffer("voxel_data")
                 .set_push_constants_size(sizeof(compute_push_constants))
                 .create(Renderer::Core::get_logical_device());
         });

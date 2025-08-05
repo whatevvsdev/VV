@@ -22,6 +22,7 @@
 #include "imgui_impl_vulkan.h"
 
 #include "profiling.h"
+#include "device_resources.h"
 
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
@@ -592,7 +593,9 @@ namespace Renderer::Core
         create_sync_objects();
         initalize_imgui();
         ProfilingQueries::initialize(internal.physical_device, internal.device);
-        QUEUE_FUNCTION(FunctionQueueLifetime::CORE, ProfilingQueries::destroy(internal.device));
+        QUEUE_FUNCTION(FunctionQueueLifetime::CORE, ProfilingQueries::terminate(internal.device));
+        DeviceResources::initialize();
+        QUEUE_FUNCTION(FunctionQueueLifetime::CORE, DeviceResources::terminate());
     }
 
     void terminate()

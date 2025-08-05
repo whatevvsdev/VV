@@ -16,7 +16,7 @@ namespace ProfilingQueries
     };
 
     void initialize(VkPhysicalDevice physical_device, VkDevice device);
-    void destroy(VkDevice device);
+    void terminate(VkDevice device);
     void reset_device_profiling_queries(VkCommandBuffer command_buffer);
     void end_frame();
 

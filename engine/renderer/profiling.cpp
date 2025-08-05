@@ -98,7 +98,7 @@ void ProfilingQueries::initialize(VkPhysicalDevice physical_device, VkDevice dev
     }
 }
 
-void ProfilingQueries::destroy(VkDevice device)
+void ProfilingQueries::terminate(VkDevice device)
 {
     vkDestroyQueryPool(device, internal.timestamp_query_pool, nullptr);
 }

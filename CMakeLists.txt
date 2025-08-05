@@ -24,6 +24,8 @@ add_executable(VV main.cpp
         engine/renderer/compute_pipeline.h
         engine/renderer/profiling.cpp
         engine/renderer/profiling.h
+        engine/renderer/vk_device_resources.cpp
+        engine/renderer/device_resources.h
 )
 
 # Force SDL to be compiled into

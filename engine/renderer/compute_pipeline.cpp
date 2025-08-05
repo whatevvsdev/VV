@@ -1,5 +1,6 @@
 ﻿#include "compute_pipeline.h"
 
+#include "device_resources.h"
 #include "../../common/types.h"
 #include "renderer_core.h"
 
@@ -89,7 +90,7 @@ ComputePipelineBuilder& ComputePipelineBuilder::bind_storage_image(VkImageView i
     return *this;
 }
 
-ComputePipelineBuilder& ComputePipelineBuilder::bind_storage_buffer(VkBuffer buffer, VkDeviceSize buffer_size)
+ComputePipelineBuilder& ComputePipelineBuilder::bind_storage_buffer(const std::string& buffer_name)
 {
     VkDescriptorSetLayoutBinding new_descriptor_set_layout_binding
     {
@@ -99,10 +100,12 @@ ComputePipelineBuilder& ComputePipelineBuilder::bind_storage_buffer(VkBuffer buf
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
     };
 
+    auto buffer_data = DeviceResources::get_buffer(buffer_name);
+
     bindings.push_back(new_descriptor_set_layout_binding);
     image_views.push_back(VK_NULL_HANDLE);
-    buffer_sizes.push_back(buffer_size);
-    buffers.push_back(buffer);
+    buffer_sizes.push_back(buffer_data.size);
+    buffers.push_back(buffer_data.handle);
 
     return *this;
 }
