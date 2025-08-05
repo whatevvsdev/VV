@@ -147,36 +147,38 @@ void intersect(inout IntersectionState state, Ray ray)
 			aabb_ray.position = (model_buffer.headers[i].inverse_transform * vec4(aabb_ray.position, 1.0f)).rgb;
 			aabb_ray.direction = normalize(model_buffer.headers[i].inverse_transform * vec4(aabb_ray.direction, 0.0f)).rgb;
 
+
+			vec4 t_normal = vec4(0);
 			// If not inside the AABB
 			if (aabb_ray.position != clamp(aabb_ray.position, -half_size, half_size))
 			{
-				vec4 t_normal = intersect_aabb(-half_size, half_size, aabb_ray);
+				t_normal = intersect_aabb(-half_size, half_size, aabb_ray);
+			}
+
+			// Closer than
+			if (t_normal.x < state.t)
+			{
+				vec3 hit_pos = ray.position + ray.direction * (t_normal.r - EPSILON);
+				vec3 in_volume_position = (model_buffer.headers[i].inverse_transform * vec4(hit_pos, 1.0f)).xyz + half_size;
+				ivec3 voxel_position = ivec3(floor(in_volume_position));
+
+				Ray dda_ray;
+				dda_ray.position = clamp(in_volume_position, vec3(EPSILON), model_size - vec3(EPSILON));;
+				dda_ray.direction = aabb_ray.direction;
+
+				voxel_position = clamp(voxel_position, ivec3(0), ivec3(model_size) - ivec3(1));
+
+				float t = DDA(state, dda_ray, model_buffer.headers[i], voxel_position);
+				t_normal.x += t;
 
 				if (t_normal.x < state.t)
 				{
-					vec3 hit_pos = ray.position + ray.direction * (t_normal.r - EPSILON);
-					vec3 in_volume_position = (model_buffer.headers[i].inverse_transform * vec4(hit_pos, 1.0f)).xyz + half_size;
-					ivec3 voxel_position = ivec3(floor(in_volume_position));
-
-					Ray dda_ray;
-					dda_ray.position = clamp(in_volume_position, vec3(EPSILON), model_size - vec3(EPSILON));;
-					dda_ray.direction = aabb_ray.direction;
-
-					voxel_position = clamp(voxel_position, ivec3(0), ivec3(model_size) - ivec3(1));
-
-					float t = DDA(state, dda_ray, model_buffer.headers[i], voxel_position);
-					t_normal.x += t;
-
-					if (t_normal.x < state.t)
-					{
-						state.t = min(state.t, t_normal.x);
-					}
-
-					state.debug_float = vec3(t * 0.0001f);
+					state.t = min(state.t, t_normal.x);
 				}
 			}
 		}
 	}
+	state.debug_float = vec3(state.t * 0.001f);
 }
 
 void main()
