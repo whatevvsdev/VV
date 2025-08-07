@@ -107,6 +107,10 @@ void create_intersection_pipeline()
         .set_push_constants_size(sizeof(compute_push_constants))
         .create(Renderer::Core::get_logical_device());
 
+    /* TODO: When we are hot-reloading and live reconstructing the pipelines,
+        we cannot rely on the deletion queue (unless we can specify a key to
+        remove the pipline from it if we have to destroy the pipeline early)
+    */
 #if HOTRELOAD
     IO::watch_for_file_update(SHADER_SOURCE_PATH "rt_intersect.comp",
         []()
@@ -132,6 +136,10 @@ void create_shade_pipeline()
         .set_push_constants_size(sizeof(compute_push_constants))
         .create(Renderer::Core::get_logical_device());
 
+    /* TODO: When we are hot-reloading and live reconstructing the pipelines,
+        we cannot rely on the deletion queue (unless we can specify a key to
+        remove the pipline from it if we have to destroy the pipeline early)
+    */
 #if HOTRELOAD
     IO::watch_for_file_update(SHADER_SOURCE_PATH "rt_shade.comp",
         []()
@@ -374,6 +382,7 @@ void Renderer::terminate()
         key system to remove stuff from the queue if need be?
     */
     state.intersect_pipeline.destroy();
+    state.shade_pipeline.destroy();
     QUEUE_FLUSH(FunctionQueueLifetime::CORE);
 
     Renderer::Core::terminate();
