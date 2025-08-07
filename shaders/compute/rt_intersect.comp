@@ -6,10 +6,12 @@ layout (local_size_x = 16, local_size_y = 16) in;
 
 layout(rgba16f,set = 0, binding = 0) uniform image2D image;
 
-layout(std430, set = 0, binding = 1) buffer RayGenIn
+layout(set = 0, binding = 1) buffer RayGenIn
 {
     vec4 data[];
 } ray_buffer;
+
+#define MODEL_INSTANCE_COUNT 64
 
 struct ModelHeader
 {
@@ -17,9 +19,9 @@ struct ModelHeader
 	mat4 inverse_transform;
 };
 
-layout(std430, set = 0, binding = 2) buffer ModelIn
+layout(set = 0, binding = 2) buffer ModelIn
 {
-	ModelHeader headers[8];
+	ModelHeader headers[MODEL_INSTANCE_COUNT];
     uint data[];
 } model_buffer;
 
@@ -46,14 +48,17 @@ struct IntersectionState
 {
 	float t;
 	vec3 debug_float;
+	vec3 normal;
 };
 
 uint from_3d_to_1d(ivec3 in_3d, ivec3 model_size, int model_offset)
 {
-	return model_offset + (in_3d[0] + in_3d[1] * model_size.x + in_3d[2] * model_size.x * model_size.y);
+	int volume = model_size.x * model_size.y * model_size.z;
+	int index = model_offset + (in_3d[0] + in_3d[1] * model_size.x + in_3d[2] * model_size.x * model_size.y);
+	return clamp(index, 0, volume);
 }
 
-float DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3 voxel_start_position)
+vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3 voxel_start_position)
 {
     ivec3 voxel_position = voxel_start_position;
 	ivec3 size = header.index_and_size.gba;
@@ -61,10 +66,8 @@ float DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec
     // If we start inside a voxel, return
     if (model_buffer.data[from_3d_to_1d(voxel_position, size, header.index_and_size.x)] != 0)
     {
-        return 0.0f;
+        return vec4(0.0f);
     }
-
-	//state.debug_float.rgb = voxel_position;
 
     // Voxel Marching
 	const ivec3 t_sign = ivec3(sign(ray.direction));
@@ -87,17 +90,19 @@ float DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec
         // Check bounds
 		if (voxel_position[axis] < 0 || voxel_position[axis] >= size[axis])
 		{
-			return FLT_MAX;
+			return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
         }
 
         uint world_index = from_3d_to_1d(voxel_position, size, header.index_and_size.x);
         if (model_buffer.data[world_index] != 0)
         {
-            return t_max[axis] - t_delta[axis];
+			vec3 normal = vec3(0.0f);
+			normal[axis] = t_sign[axis];
+            return vec4(t_max[axis] - t_delta[axis], normal);
         }
 		check -= 1;
     }
-	return FLT_MAX;
+	return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
 }
 
 
@@ -135,50 +140,52 @@ vec4 intersect_aabb(vec3 aabbmin, vec3 aabbmax, Ray ray)
 
 void intersect(inout IntersectionState state, Ray ray)
 {
-	for(int i = 0; i < 8; i++)
+	for(int i = 0; i < MODEL_INSTANCE_COUNT; i++)
 	{
 		int header_index = model_buffer.headers[i].index_and_size.x;
 		ivec3 model_size = model_buffer.headers[i].index_and_size.yzw;
-		if (header_index != -1)
+		if (model_size.x + model_size.y + model_size.z == 0)
+			break;
+
+		vec3 half_size = vec3(model_size) * 0.5f;
+
+		Ray aabb_ray = ray;
+		aabb_ray.position = (model_buffer.headers[i].inverse_transform * vec4(aabb_ray.position, 1.0f)).rgb;
+		aabb_ray.direction = normalize(model_buffer.headers[i].inverse_transform * vec4(aabb_ray.direction, 0.0f)).rgb;
+
+		vec4 t_normal = vec4(0.0f, 1.0f, 1.0f, 1.0f);
+		// If not inside the AABB
+		if (aabb_ray.position != clamp(aabb_ray.position, -half_size, half_size))
 		{
-			vec3 half_size = vec3(model_size) * 0.5f;
+			t_normal = intersect_aabb(-half_size, half_size, aabb_ray);
+		}
 
-			Ray aabb_ray = ray;
-			aabb_ray.position = (model_buffer.headers[i].inverse_transform * vec4(aabb_ray.position, 1.0f)).rgb;
-			aabb_ray.direction = normalize(model_buffer.headers[i].inverse_transform * vec4(aabb_ray.direction, 0.0f)).rgb;
+		// Closer than
+		if (t_normal.x <= state.t)
+		{
+			vec3 hit_pos = ray.position + ray.direction * (t_normal.r - EPSILON);
+			vec3 in_volume_position = (model_buffer.headers[i].inverse_transform * vec4(hit_pos, 1.0f)).xyz + half_size;
+			ivec3 voxel_position = ivec3(floor(in_volume_position));
 
+			Ray dda_ray;
+			dda_ray.position = clamp(in_volume_position, vec3(EPSILON), model_size - vec3(EPSILON));;
+			dda_ray.direction = aabb_ray.direction;
 
-			vec4 t_normal = vec4(0);
-			// If not inside the AABB
-			if (aabb_ray.position != clamp(aabb_ray.position, -half_size, half_size))
+			voxel_position = clamp(voxel_position, ivec3(0), ivec3(model_size) - ivec3(1));
+
+			vec4 dda_t_normal = DDA(state, dda_ray, model_buffer.headers[i], voxel_position);
+
+			float total_distance = t_normal.x + dda_t_normal.x;
+			if (total_distance < state.t)
 			{
-				t_normal = intersect_aabb(-half_size, half_size, aabb_ray);
-			}
+				state.t = min(state.t, total_distance);
 
-			// Closer than
-			if (t_normal.x < state.t)
-			{
-				vec3 hit_pos = ray.position + ray.direction * (t_normal.r - EPSILON);
-				vec3 in_volume_position = (model_buffer.headers[i].inverse_transform * vec4(hit_pos, 1.0f)).xyz + half_size;
-				ivec3 voxel_position = ivec3(floor(in_volume_position));
-
-				Ray dda_ray;
-				dda_ray.position = clamp(in_volume_position, vec3(EPSILON), model_size - vec3(EPSILON));;
-				dda_ray.direction = aabb_ray.direction;
-
-				voxel_position = clamp(voxel_position, ivec3(0), ivec3(model_size) - ivec3(1));
-
-				float t = DDA(state, dda_ray, model_buffer.headers[i], voxel_position);
-				t_normal.x += t;
-
-				if (t_normal.x < state.t)
-				{
-					state.t = min(state.t, t_normal.x);
-				}
+				state.normal = (dda_t_normal.x <= EPSILON) ? t_normal.gba : dda_t_normal.gba;
 			}
 		}
 	}
-	state.debug_float = vec3(state.t * 0.001f);
+	state.debug_float = abs(state.normal);// * (1.0 - (state.t * 0.001f));
+	//state.debug_float = vec3(state.t * 0.01f);
 }
 
 void main()

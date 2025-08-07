@@ -26,9 +26,10 @@ DeviceResources::Buffer DeviceResources::create_buffer(const std::string& buffer
             // TODO: VMA_MEMORY_USAGE_CPU_TO_GPU is deprecated
             .usage = cpu_to_gpu ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_AUTO,
         };
-
+        
         vmaCreateBuffer(Renderer::Core::get_vma_allocator(), &buffer_create_info, &vma_allocation_create_info, &created_buffer.handle, &created_buffer.allocation, nullptr);
 
+        created_buffer.size = size;
         internal.buffers[buffer_name] = created_buffer;
         return created_buffer;
     }

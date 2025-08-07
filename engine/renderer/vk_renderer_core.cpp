@@ -206,8 +206,15 @@ namespace Renderer::Core
             .descriptorBuffer = VK_TRUE,
         };
 
+        VkPhysicalDeviceSynchronization2Features synchronization2_features
+        {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+            .synchronization2 = VK_TRUE
+        };
+
         dynamic_rendering_feature.pNext = &buffer_device_address_features;
         buffer_device_address_features.pNext = &descriptor_buffer_features;
+        descriptor_buffer_features.pNext = &synchronization2_features;
 
         VkDeviceCreateInfo device_create_info{};
         device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

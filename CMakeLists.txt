@@ -26,6 +26,8 @@ add_executable(VV main.cpp
         engine/renderer/profiling.h
         engine/renderer/vk_device_resources.cpp
         engine/renderer/device_resources.h
+        engine/data/voxel_model.cpp
+        engine/data/voxel_model.h
 )
 
 # Force SDL to be compiled into
