@@ -133,7 +133,7 @@ void create_shade_pipeline()
         .create(Renderer::Core::get_logical_device());
 
 #if HOTRELOAD
-    IO::watch_for_file_update(SHADER_SOURCE_PATH "rt_intersect.comp",
+    IO::watch_for_file_update(SHADER_SOURCE_PATH "rt_shade.comp",
         []()
         {
             system(SHADER_COMPILE_SCRIPT_PATH);
