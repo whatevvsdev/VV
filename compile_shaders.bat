@@ -12,6 +12,6 @@ if not exist "%OUTPUT_FOLDER%" (
 
 for %%e in (%EXTENSIONS%) do (
     for /R "%ROOT_FOLDER%" %%f in (*.%%e) do (
-        %SHADER_COMPILER% -g -MD -MF "%%f".dependencies "%%f" -o "%OUTPUT_FOLDER%\%%~nxf.spv"
+        %SHADER_COMPILER% --target-env=vulkan1.3 -g -MD -MF "%%f".dependencies "%%f" -o "%OUTPUT_FOLDER%\%%~nxf.spv"
     )
 )
