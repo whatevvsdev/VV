@@ -6,6 +6,9 @@
 #include "ogt_vox.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/euler_angles.hpp>
+
 
 typedef u32 Voxel;
 
@@ -94,6 +97,21 @@ void VoxelModels::upload_models_to_gpu()
     vmaUnmapMemory(Renderer::Core::get_vma_allocator(), created_buffer.allocation);
 }
 
+// Holy this is a mess, but it works
+void transform_vox_transform_to_engine_transform(glm::mat4& transform)
+{
+    glm::vec3 eulerRadians = glm::eulerAngles(glm::quat_cast(glm::mat3(transform)));
+    auto swap = eulerRadians.y; eulerRadians.y = eulerRadians.z; eulerRadians.z = -swap;
+
+    glm::vec3 position = glm::vec3(transform[3]);
+    swap = position.y; position.y = position.z; position.z = -swap;
+
+    glm::mat4 translation = glm::translate(glm::mat4(1.0f), position);
+    glm::mat4 rotation    = glm::eulerAngleXYZ(eulerRadians.x, eulerRadians.y, eulerRadians.z);
+
+    transform = translation * rotation;
+}
+
 void VoxelModels::load(std::filesystem::path path)
 {
     auto ogt_file = IO::read_binary_file(path);
@@ -108,11 +126,30 @@ void VoxelModels::load(std::filesystem::path path)
         u32 volume = ogt_model.size_x * ogt_model.size_y * ogt_model.size_z;
 
         VoxelModelData voxel_model;
-        voxel_model.size = glm::ivec3(ogt_model.size_x, ogt_model.size_y, ogt_model.size_z);
+        voxel_model.size = glm::ivec3(ogt_model.size_x, ogt_model.size_z, ogt_model.size_y); // VOX has different space so we use X Z Y
         voxel_model.voxels.resize(volume);
 
-        for (i32 v = 0; v < volume; v++)
-            voxel_model.voxels[v] = ogt_model.voxel_data[v];
+        auto& new_size = voxel_model.size;
+        auto old_size = glm::ivec3(ogt_model.size_x, ogt_model.size_y, ogt_model.size_z);
+
+        for (i32 z = 0; z < old_size.z; z++)
+        {
+            for (i32 y = 0; y < old_size.y; y++)
+            {
+                for (i32 x = 0; x < old_size.x; x++)
+                {
+                    i32 vox_index = x + y * old_size.x + z * old_size.x * old_size.y;
+
+                    i32 new_x = x;
+                    i32 new_y = z;
+                    i32 new_z = old_size.y - 1 - y;
+
+                    i32 index = new_x + new_y * new_size.x + new_z * new_size.x * new_size.y;
+
+                    voxel_model.voxels[index] = ogt_model.voxel_data[vox_index];
+                }
+            }
+        }
 
         new_models.push_back(voxel_model);
     }
@@ -123,18 +160,11 @@ void VoxelModels::load(std::filesystem::path path)
 
         VoxelModelData::InstanceData  model_instance;
         model_instance.model_index = ogt_instance.model_index + internal.voxel_models.size();
-
         glm::mat4 transform = glm::make_mat4(&ogt_instance.transform.m00);
 
-        // We might later do this in the model parsing instead
-        glm::mat4 axis_correction = glm::mat4(
-            glm::vec4(1, 0,  0, 0),
-            glm::vec4(0, 0,  -1, 0),
-            glm::vec4(0,  1, 0, 0),
-            glm::vec4(0, 0,  0, 1)
-        );
+        transform_vox_transform_to_engine_transform(transform);
 
-        model_instance.inverse_transform = glm::inverse(axis_correction * transform);
+        model_instance.inverse_transform = glm::inverse(transform);
 
         new_models[ogt_instance.model_index].instances.push_back(model_instance);
     }

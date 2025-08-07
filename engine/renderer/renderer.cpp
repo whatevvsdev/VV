@@ -84,8 +84,6 @@ void load_voxel_data()
 
 void create_raygen_pipeline()
 {
-    auto& extent = Renderer::Core::get_swapchain_data().surface_extent;
-
     state.raygen_pipeline = ComputePipelineBuilder(SHADER_COMPILED_PATH "rt_raygen.comp.spv")
         .bind_storage_buffer("raygen_buffer")
         .set_push_constants_size(sizeof(compute_push_constants))
