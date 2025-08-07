@@ -51,26 +51,42 @@ struct
 {
     ComputePipeline raygen_pipeline;
     ComputePipeline intersect_pipeline;
-
-    //VVBuffer voxel_model_buffer;
-    //VVBuffer raygen_buffer;
+    ComputePipeline shade_pipeline;
 
     Renderer::AllocatedImage draw_image {};
 } state;
 
-struct
+struct alignas(16)
 {
     glm::mat4 camera_matrix { glm::mat4(1) };
+    glm::ivec2 render_extent;
 } compute_push_constants;
+
+struct alignas(16) Ray
+{
+    glm::vec3 position;
+    glm::vec3 direction;
+};
+
+struct alignas(16) IntersectionResult
+{
+    float hit_distance;
+    float dummy[3];
+    glm::vec3 incoming_direction;
+    glm::vec3 normal;
+};
+
+void load_voxel_data()
+{
+    VoxelModels::load("../stanford-dragon.vox");
+    VoxelModels::upload_models_to_gpu();
+}
 
 void create_raygen_pipeline()
 {
     auto& extent = Renderer::Core::get_swapchain_data().surface_extent;
 
-    DeviceResources::create_buffer("raygen_buffer", sizeof(glm::vec4) * extent.width * extent.height);
-
     state.raygen_pipeline = ComputePipelineBuilder(SHADER_COMPILED_PATH "rt_raygen.comp.spv")
-        .bind_storage_image(state.draw_image.view)
         .bind_storage_buffer("raygen_buffer")
         .set_push_constants_size(sizeof(compute_push_constants))
         .create(Renderer::Core::get_logical_device());
@@ -82,18 +98,12 @@ void create_raygen_pipeline()
     QUEUE_FUNCTION(FunctionQueueLifetime::CORE, state.raygen_pipeline.destroy());
 }
 
-void load_voxel_data()
-{
-    VoxelModels::load("../stanford-dragon.vox");
-    VoxelModels::upload_models_to_gpu();
-}
-
 void create_intersection_pipeline()
 {
     state.intersect_pipeline = ComputePipelineBuilder( SHADER_COMPILED_PATH "rt_intersect.comp.spv")
-        .bind_storage_image(state.draw_image.view)
         .bind_storage_buffer("raygen_buffer")
         .bind_storage_buffer("voxel_data")
+        .bind_storage_buffer("intersection_results")
         .set_push_constants_size(sizeof(compute_push_constants))
         .create(Renderer::Core::get_logical_device());
 
@@ -105,9 +115,33 @@ void create_intersection_pipeline()
 
             state.intersect_pipeline.destroy();
             state.intersect_pipeline = ComputePipelineBuilder(SHADER_COMPILED_PATH "rt_intersect.comp.spv")
-                .bind_storage_image(state.draw_image.view)
                 .bind_storage_buffer("raygen_buffer")
                 .bind_storage_buffer("voxel_data")
+                .bind_storage_buffer("intersection_results")
+                .set_push_constants_size(sizeof(compute_push_constants))
+                .create(Renderer::Core::get_logical_device());
+        });
+#endif
+}
+
+void create_shade_pipeline()
+{
+    state.shade_pipeline = ComputePipelineBuilder( SHADER_COMPILED_PATH "rt_shade.comp.spv")
+        .bind_storage_image(state.draw_image.view)
+        .bind_storage_buffer("intersection_results")
+        .set_push_constants_size(sizeof(compute_push_constants))
+        .create(Renderer::Core::get_logical_device());
+
+#if HOTRELOAD
+    IO::watch_for_file_update(SHADER_SOURCE_PATH "rt_intersect.comp",
+        []()
+        {
+            system(SHADER_COMPILE_SCRIPT_PATH);
+
+            state.shade_pipeline.destroy();
+            state.shade_pipeline = ComputePipelineBuilder( SHADER_COMPILED_PATH "rt_shade.comp.spv")
+                .bind_storage_image(state.draw_image.view)
+                .bind_storage_buffer("intersection_results")
                 .set_push_constants_size(sizeof(compute_push_constants))
                 .create(Renderer::Core::get_logical_device());
         });
@@ -121,9 +155,13 @@ void Renderer::initialize(SDL_Window* sdl_window_ptr)
 
     state.draw_image = Renderer::Core::create_image(swapchain_data.surface_extent, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_IMAGE_ASPECT_COLOR_BIT, "compute_draw_image");
 
-    create_raygen_pipeline();
+    DeviceResources::create_buffer("raygen_buffer", sizeof(Ray) * swapchain_data.surface_extent.width * swapchain_data.surface_extent.height);
+    DeviceResources::create_buffer("intersection_results", sizeof(IntersectionResult) * swapchain_data.surface_extent.width * swapchain_data.surface_extent.height);
     load_voxel_data();
+
+    create_raygen_pipeline();
     create_intersection_pipeline();
+    create_shade_pipeline();
 }
 
 void transition_image_layout(VkCommandBuffer cmd_buffer, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkAccessFlags2 src_access_mask, VkAccessFlags2 dst_access_mask, VkPipelineStageFlags2 src_stage_mask, VkPipelineStageFlags2 dst_stage_mask)
@@ -288,6 +326,8 @@ void Renderer::end_frame()
     u32 dispatch_width = std::ceil(swapchain_data.surface_extent.width / 16.0);
     u32 dispatch_height = std::ceil(swapchain_data.surface_extent.height / 16.0);
 
+    compute_push_constants.render_extent = glm::ivec2(swapchain_data.surface_extent.width, swapchain_data.surface_extent.height);
+
     ProfilingQueries::device_start("raygen", per_frame_data.command_buffer);
     state.raygen_pipeline.dispatch(per_frame_data.command_buffer, dispatch_width, dispatch_height, 1, &compute_push_constants);
     ProfilingQueries::device_stop("raygen", per_frame_data.command_buffer);
@@ -295,6 +335,10 @@ void Renderer::end_frame()
     ProfilingQueries::device_start("intersect", per_frame_data.command_buffer);
     state.intersect_pipeline.dispatch(per_frame_data.command_buffer, dispatch_width, dispatch_height, 1, &compute_push_constants);
     ProfilingQueries::device_stop("intersect", per_frame_data.command_buffer);
+
+    ProfilingQueries::device_start("shade", per_frame_data.command_buffer);
+    state.shade_pipeline.dispatch(per_frame_data.command_buffer, dispatch_width, dispatch_height, 1, &compute_push_constants);
+    ProfilingQueries::device_stop("shade", per_frame_data.command_buffer);
 
     transition_image_layout(per_frame_data.command_buffer,
        state.draw_image.image,

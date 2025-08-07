@@ -1,0 +1,41 @@
+#version 460
+
+#include "common.glsl"
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout(rgba16f,set = 0, binding = 0) uniform image2D image;
+
+layout(std430, set = 0, binding = 1) buffer IntersectOut
+{
+    IntersectResult results[];
+} intersection_buffer;
+
+layout( push_constant ) uniform PushConstants
+{
+    mat4 camera_matrix;
+    ivec2 render_extent;
+} push_constants;
+
+void main()
+{
+    ivec2 texel_coord = ivec2(gl_GlobalInvocationID.xy);
+    uint index = texel_coord.x + texel_coord.y * push_constants.render_extent.x;
+
+    if (texel_coord.x >= push_constants.render_extent.x ||
+    texel_coord.y >= push_constants.render_extent.y)
+    {
+        return;
+    }
+    IntersectResult result = intersection_buffer.results[index];
+
+    if (result.hit_distance != FLT_MAX)
+    {
+        //float max_depth_length = 512.0f;//max(model_buffer.size.x, max(model_buffer.size.y, model_buffer.size.z)) + 256.0f;
+        imageStore(image, texel_coord, vec4(result.normal, 1.0f));
+    }
+    else
+    {
+        imageStore(image, texel_coord, vec4(0.0f));
+    }
+}

@@ -1,17 +1,18 @@
 #version 460
 
+#include "common.glsl"
+
 layout (local_size_x = 16, local_size_y = 16) in;
 
-layout(rgba16f,set = 0, binding = 0) uniform image2D image;
-
-layout(std430, set = 0, binding = 1) buffer RayGenOut
+layout(std430, set = 0, binding = 0) buffer RayGenOut
 {
-    vec4 data[];
+    Ray rays[];
 } ray_buffer;
 
-layout( push_constant ) uniform PushConstants
+layout(push_constant) uniform PushConstants
 {
 	mat4 camera_matrix;
+	ivec2 render_extent;
 } push_constants;
 
 vec3 generate_pinhole_ray_direction(ivec2 image_size, mat4 matrix)
@@ -30,10 +31,18 @@ vec3 generate_pinhole_ray_direction(ivec2 image_size, mat4 matrix)
 
 void main()
 {
-    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
-	ivec2 size = imageSize(image);
-    uint index = texelCoord.x + texelCoord.y * size.x;
+	ivec2 texel_coord = ivec2(gl_GlobalInvocationID.xy);
+	uint index = texel_coord.x + texel_coord.y * push_constants.render_extent.x;
 
-    vec3 direction = generate_pinhole_ray_direction(size, push_constants.camera_matrix);
-    ray_buffer.data[index] = vec4(direction, 1.0f);
+	if (texel_coord.x >= push_constants.render_extent.x ||
+	texel_coord.y >= push_constants.render_extent.y)
+	{
+		return;
+	}
+
+	Ray generated_ray;
+	generated_ray.position = get_translation_from_matrix(push_constants.camera_matrix);
+	generated_ray.direction = generate_pinhole_ray_direction(push_constants.render_extent, push_constants.camera_matrix);
+
+    ray_buffer.rays[index] = generated_ray;
 }

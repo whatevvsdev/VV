@@ -2,15 +2,6 @@
 
 #include "common.glsl"
 
-layout (local_size_x = 16, local_size_y = 16) in;
-
-layout(rgba16f,set = 0, binding = 0) uniform image2D image;
-
-layout(set = 0, binding = 1) buffer RayGenIn
-{
-    vec4 data[];
-} ray_buffer;
-
 #define MODEL_INSTANCE_COUNT 64
 
 struct ModelHeader
@@ -19,30 +10,29 @@ struct ModelHeader
 	mat4 inverse_transform;
 };
 
-layout(set = 0, binding = 2) buffer ModelIn
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0) buffer RayGenIn
+{
+    Ray rays[];
+} ray_buffer;
+
+layout(set = 0, binding = 1) buffer ModelIn
 {
 	ModelHeader headers[MODEL_INSTANCE_COUNT];
     uint data[];
 } model_buffer;
 
+layout(std430, set = 0, binding = 2) buffer IntersectOut
+{
+	IntersectResult results[];
+} intersection_buffer;
+
 layout(push_constant) uniform PushConstants
 {
 	mat4 camera_matrix;
+	ivec2 render_extent;
 } push_constants;
-
-vec3 get_translation_from_matrix(mat4 matrix)
-{
-	return vec3(matrix[3][0], matrix[3][1], matrix[3][2]);
-}
-
-#define FLT_MAX (1.0 / 0.0)
-#define EPSILON 0.001f
-
-struct Ray
-{
-	vec3 direction;
-	vec3 position;
-};
 
 struct IntersectionState
 {
@@ -184,31 +174,27 @@ void intersect(inout IntersectionState state, Ray ray)
 			}
 		}
 	}
-	state.debug_float = abs(state.normal);// * (1.0 - (state.t * 0.001f));
-	//state.debug_float = vec3(state.t * 0.01f);
 }
 
 void main()
 {
-    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
-	ivec2 size = imageSize(image);
-    uint index = texelCoord.x + texelCoord.y * size.x;
+    ivec2 texel_coord = ivec2(gl_GlobalInvocationID.xy);
+    uint index = texel_coord.x + texel_coord.y * push_constants.render_extent.x;
 
-	Ray new_ray;
-	new_ray.position = get_translation_from_matrix(push_constants.camera_matrix);
-	new_ray.direction = ray_buffer.data[index].rgb;
+	if (texel_coord.x >= push_constants.render_extent.x ||
+		texel_coord.y >= push_constants.render_extent.y)
+	{
+		return;
+	}
+
+	Ray ray = ray_buffer.rays[index];
 
 	IntersectionState state;
 	state.t = FLT_MAX;
-	intersect(state, new_ray);
 
-	if (state.t != FLT_MAX)
-	{
-		float max_depth_length = 512.0f;//max(model_buffer.size.x, max(model_buffer.size.y, model_buffer.size.z)) + 256.0f;
-		imageStore(image, texelCoord, vec4(state.debug_float, 1.0f));
-	}
-	else
-	{
-    	imageStore(image, texelCoord, ray_buffer.data[index] * 0.5f + vec4(0.5f));
-	}
+	intersect(state, ray);
+
+	intersection_buffer.results[index].hit_distance = state.t;
+	intersection_buffer.results[index].incoming_direction = ray.direction;
+	intersection_buffer.results[index].normal = state.normal;
 }
