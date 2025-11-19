@@ -105,7 +105,9 @@ void Game::update()
 
     //ImGui::SetNextWindowSize(ImVec2(300.0f, 100.0f));
     ImGui::Begin("Info", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::Text("Position %.2f %.2f %.2f ", state.position.x, state.position.y, state.position.z);
     ImGui::Text("Forward %.2f %.2f %.2f ", -state.camera_matrix[2].x, -state.camera_matrix[2].y, -state.camera_matrix[2].z);
+    ImGui::Text("Position: ");
+    ImGui::SameLine();
+    ImGui::DragFloat3("## Position drag float", &state.position.x, 0.1f);
     ImGui::End();
 }
