@@ -112,7 +112,7 @@ void transform_vox_transform_to_engine_transform(glm::mat4& transform)
     transform = translation * rotation;
 }
 
-void VoxelModels::load(std::filesystem::path path)
+void VoxelModels::load(std::filesystem::path path, glm::ivec3 repeat)
 {
     auto ogt_file = IO::read_binary_file(path);
     const ogt_vox_scene* scene = ogt_vox_read_scene(ogt_file.data(), ogt_file.size());
@@ -123,14 +123,15 @@ void VoxelModels::load(std::filesystem::path path)
     for (u32 i = 0u; i < scene->num_models; i++)
     {
         auto& ogt_model = *scene->models[i];
-        u32 volume = ogt_model.size_x * ogt_model.size_y * ogt_model.size_z;
 
         VoxelModelData voxel_model;
-        voxel_model.size = glm::ivec3(ogt_model.size_x, ogt_model.size_z, ogt_model.size_y); // VOX has different space so we use X Z Y
+        u32 volume = ogt_model.size_x * ogt_model.size_y * ogt_model.size_z * repeat.x * repeat.y * repeat.z;
+        voxel_model.size = glm::ivec3(ogt_model.size_x, ogt_model.size_z, ogt_model.size_y) * repeat; // VOX has different space so we use X Z Y
         voxel_model.voxels.resize(volume);
 
         auto& new_size = voxel_model.size;
         auto old_size = glm::ivec3(ogt_model.size_x, ogt_model.size_y, ogt_model.size_z);
+
 
         for (i32 z = 0; z < old_size.z; z++)
         {
@@ -140,13 +141,22 @@ void VoxelModels::load(std::filesystem::path path)
                 {
                     i32 vox_index = x + y * old_size.x + z * old_size.x * old_size.y;
 
-                    i32 new_x = x;
-                    i32 new_y = z;
-                    i32 new_z = old_size.y - 1 - y;
+                    for (i32 rz = 0; rz < repeat.z; rz++)
+                    {
+                        for (i32 ry = 0; ry < repeat.y; ry++)
+                        {
+                            for (i32 rx = 0; rx < repeat.x; rx++)
+                            {
+                                i32 new_x = x + old_size.x * rx;
+                                i32 new_y = z + old_size.z * rz;
+                                i32 new_z = old_size.y - 1 - y + old_size.y * ry;
 
-                    i32 index = new_x + new_y * new_size.x + new_z * new_size.x * new_size.y;
+                                i32 index = new_x + new_y * new_size.x + new_z * new_size.x * new_size.y;
 
-                    voxel_model.voxels[index] = ogt_model.voxel_data[vox_index];
+                                voxel_model.voxels[index] = ogt_model.voxel_data[vox_index];
+                            }
+                        }
+                    }
                 }
             }
         }

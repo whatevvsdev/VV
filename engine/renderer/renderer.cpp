@@ -78,7 +78,7 @@ struct alignas(16) IntersectionResult
 
 void load_voxel_data()
 {
-    VoxelModels::load("../stanford-dragon.vox");
+    VoxelModels::load("../monu1.vox", glm::ivec3(8));
     VoxelModels::upload_models_to_gpu();
 }
 
