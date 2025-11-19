@@ -22,11 +22,11 @@ void main()
     ivec2 texel_coord = ivec2(gl_GlobalInvocationID.xy);
     uint index = texel_coord.x + texel_coord.y * push_constants.render_extent.x;
 
-    if (texel_coord.x >= push_constants.render_extent.x ||
-    texel_coord.y >= push_constants.render_extent.y)
+    if (texel_coord.x >= push_constants.render_extent.x || texel_coord.y >= push_constants.render_extent.y)
     {
         return;
     }
+
     IntersectResult result = intersection_buffer.results[index];
 
     if (result.hit_distance != FLT_MAX)
