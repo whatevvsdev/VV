@@ -150,8 +150,8 @@ void intersect(inout IntersectionState state, Ray ray)
 			t_normal = intersect_aabb(-half_size, half_size, aabb_ray);
 		}
 
-		// Closer than
-		if (t_normal.x <= state.t)
+		// Closer than current hit
+		if (t_normal.x < state.t)
 		{
 			vec3 hit_pos = ray.position + ray.direction * (t_normal.r - EPSILON);
 			vec3 in_volume_position = (model_buffer.headers[i].inverse_transform * vec4(hit_pos, 1.0f)).xyz + half_size;
