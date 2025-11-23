@@ -39,6 +39,7 @@ struct IntersectionState
 	float t;
 	vec3 debug_float;
 	vec3 normal;
+	ivec3 dummy_temp_voxel_pos;
 };
 
 uint from_3d_to_1d(ivec3 in_3d, ivec3 model_size, int model_offset)
@@ -88,6 +89,9 @@ vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3
         {
 			vec3 normal = vec3(0.0f);
 			normal[axis] = -t_sign[axis];
+			state.dummy_temp_voxel_pos[0] = voxel_position[0];
+			state.dummy_temp_voxel_pos[1] = voxel_position[1];
+			state.dummy_temp_voxel_pos[2] = voxel_position[2];
             return vec4(t_max[axis] - t_delta[axis], normal);
         }
 		check -= 1;
@@ -190,10 +194,18 @@ void main()
 
 	IntersectionState state;
 	state.t = FLT_MAX;
+	state.dummy_temp_voxel_pos[0] = 0;
+	state.dummy_temp_voxel_pos[1] = 0;
+	state.dummy_temp_voxel_pos[2] = 0;
 
 	intersect(state, ray);
 
 	intersection_buffer.results[index].hit_distance = state.t;
 	intersection_buffer.results[index].incoming_direction = ray.direction;
 	intersection_buffer.results[index].normal = state.normal;
+	intersection_buffer.results[index].dummy_temp_voxel_pos[0] = state.dummy_temp_voxel_pos[0];
+	intersection_buffer.results[index].dummy_temp_voxel_pos[1] = state.dummy_temp_voxel_pos[1];
+	intersection_buffer.results[index].dummy_temp_voxel_pos[2] = state.dummy_temp_voxel_pos[2];
+
+
 }

@@ -17,6 +17,23 @@ layout( push_constant ) uniform PushConstants
     ivec2 render_extent;
 } push_constants;
 
+// Hashing taken from https://www.shadertoy.com/view/NtjyWw for now
+const uint k = 1103515245U;  // GLIB C
+
+vec3 uhash3( uvec3 x )         // iq version
+{
+    x = ((x>>8U)^x.yzx)*k;
+    x = ((x>>8U)^x.yzx)*k;
+    x = ((x>>8U)^x.yzx)*k;
+
+    return vec3(x)/float(0xffffffffU);
+}
+
+vec3 hash( vec3 f )
+{
+    return uhash3( floatBitsToUint(f) );
+}
+
 void main()
 {
     ivec2 texel_coord = ivec2(gl_GlobalInvocationID.xy);
@@ -32,7 +49,9 @@ void main()
     if (result.hit_distance != FLT_MAX)
     {
         //float max_depth_length = 512.0f;//max(model_buffer.size.x, max(model_buffer.size.y, model_buffer.size.z)) + 256.0f;
-        imageStore(image, texel_coord, vec4(result.normal * 0.5 + vec3(0.5f), 1.0f));
+        //imageStore(image, texel_coord, vec4(result.normal * 0.5 + vec3(0.5f), 1.0f));
+        vec3 resultpos = vec3(float(result.dummy_temp_voxel_pos[0]), float(result.dummy_temp_voxel_pos[1]), float(result.dummy_temp_voxel_pos[2]));
+       imageStore(image, texel_coord, vec4(hash(resultpos) * 0.3f + (result.normal * 0.5 + vec3(0.5f)) * 0.7f, 1.0f));
     }
     else
     {

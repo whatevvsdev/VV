@@ -8,7 +8,7 @@ struct Ray // 32 Bytes
 struct IntersectResult // 48 Bytes
 {
     float hit_distance;
-    float dummy[3];
+    int dummy_temp_voxel_pos[3];
     vec3 incoming_direction;
     vec3 normal;
 };
