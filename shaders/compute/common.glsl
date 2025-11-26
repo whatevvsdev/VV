@@ -20,3 +20,5 @@ vec3 get_translation_from_matrix(mat4 matrix)
 
 #define FLT_MAX (1.0 / 0.0)
 #define EPSILON 0.001f
+
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require

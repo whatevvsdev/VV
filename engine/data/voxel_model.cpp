@@ -11,13 +11,26 @@
 
 
 typedef u32 Voxel;
+typedef u64 VoxelOccupancyBrick; // We use a 4^3 brick
+constexpr u32 VOXEL_BRICK_SIZE = 4;
+constexpr u32 VOXELS_PER_BRICK = VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE;
+
+constexpr u32 voxel_count_to_brick_count(u32 voxel_count)
+{
+    return (voxel_count + VOXELS_PER_BRICK - 1) / VOXELS_PER_BRICK;
+}
+
+inline u32 round_up_to_multiple(u32 value, u32 multiple)
+{
+    return (value + multiple - 1) / multiple * multiple;
+}
 
 /* TODO: this is currently technically an instance, not a model
     but it makes no sense to split it atm.
 */
 struct alignas(16) DeviceVoxelModelInstanceData
 {
-    glm::ivec4 index_and_size;
+    glm::ivec4 brick_index_and_size_in_voxels;
     glm::mat4 inverse_transform;
 };
 
@@ -29,8 +42,9 @@ struct VoxelModelData
         u32 model_index;
     };
 
-    std::vector<Voxel> voxels;
-    glm::ivec3 size;
+    std::vector<VoxelOccupancyBrick> voxel_occupancy_bricks;
+    //std::vector<Voxel> voxels;
+    glm::ivec3 size { glm::ivec3(0) };
     std::vector<InstanceData> instances;
 };
 
@@ -51,44 +65,46 @@ void VoxelModels::upload_models_to_gpu()
 {
     for (i32 i = 0; i < instance_count; i++)
     {
-        device.instances[i].index_and_size = glm::ivec4(0, 0, 0, 0);
+        device.instances[i].brick_index_and_size_in_voxels = glm::ivec4(0, 0, 0, 0);
         device.instances[i].inverse_transform = glm::mat4(0.0f);
     }
 
-    u32 total_model_size_in_voxels { 0 };
+    //u32 total_model_size_in_voxels { 0 };
+    u32 voxel_brick_count_of_all_models_combined { 0 };
 
     for (auto& [key, voxel_model] : internal.voxel_models)
     {
         auto model_size_in_voxels = voxel_model.size.x * voxel_model.size.y * voxel_model.size.z;
-        total_model_size_in_voxels += model_size_in_voxels;
+        //total_model_size_in_voxels += model_size_in_voxels;
+        voxel_brick_count_of_all_models_combined += voxel_count_to_brick_count(model_size_in_voxels);
     }
-    std::vector<u32> voxels(total_model_size_in_voxels);
 
-    auto created_buffer = DeviceResources::create_buffer("voxel_data", sizeof(DeviceVoxelModelInstanceData  ) * instance_count + total_model_size_in_voxels * sizeof(Voxel), true);
+    auto created_buffer = DeviceResources::create_buffer("voxel_data", sizeof(DeviceVoxelModelInstanceData) * instance_count + voxel_brick_count_of_all_models_combined * sizeof(VoxelOccupancyBrick), true);
 
     i32 header_data_size = instance_count * sizeof(DeviceVoxelModelInstanceData);
     u8* mapped_data { nullptr };
     vmaMapMemory(Renderer::Core::get_vma_allocator(), created_buffer.allocation, reinterpret_cast<void**>(&mapped_data));
-    memset(mapped_data, 0, header_data_size + total_model_size_in_voxels * sizeof(Voxel));
-    // Copy voxel data to GPU and set instance data
+    memset(mapped_data, 0, header_data_size + voxel_brick_count_of_all_models_combined * sizeof(VoxelOccupancyBrick));
 
-    i32 voxel_offset { 0 };
+    // Copy voxel data to GPU and set instance data
+    i32 voxel_brick_offset { 0 };
     i32 instance_index { 0 };
     for (auto& [key, voxel_model] : internal.voxel_models)
     {
         i32 volume = voxel_model.size.x * voxel_model.size.y * voxel_model.size.z;
+        u32 brick_count = voxel_count_to_brick_count(volume);
 
-        memcpy(mapped_data + header_data_size + voxel_offset * static_cast<i32>(sizeof(Voxel)), voxel_model.voxels.data(), volume * sizeof(Voxel));
+        memcpy(mapped_data + header_data_size + voxel_brick_offset * static_cast<i32>(sizeof(VoxelOccupancyBrick)), voxel_model.voxel_occupancy_bricks.data(), brick_count * sizeof(VoxelOccupancyBrick));
 
         for (auto& instance : voxel_model.instances)
         {
             auto& writing_instance = device.instances[instance_index];
-            writing_instance.index_and_size = glm::ivec4(voxel_offset, voxel_model.size);
+            writing_instance.brick_index_and_size_in_voxels = glm::ivec4(voxel_brick_offset, voxel_model.size);
             writing_instance.inverse_transform = instance.inverse_transform;
             instance_index++;
         }
 
-        voxel_offset += volume;
+        voxel_brick_offset += static_cast<i32>(brick_count);
     }
 
     // Copy instance headers to GPU
@@ -125,13 +141,14 @@ void VoxelModels::load(std::filesystem::path path, glm::ivec3 repeat)
         auto& ogt_model = *scene->models[i];
 
         VoxelModelData voxel_model;
-        u32 volume = ogt_model.size_x * ogt_model.size_y * ogt_model.size_z * repeat.x * repeat.y * repeat.z;
-        voxel_model.size = glm::ivec3(ogt_model.size_x, ogt_model.size_z, ogt_model.size_y) * repeat; // VOX has different space so we use X Z Y
-        voxel_model.voxels.resize(volume);
+        voxel_model.size = glm::ivec3(round_up_to_multiple(ogt_model.size_x * repeat.x, VOXEL_BRICK_SIZE), round_up_to_multiple(ogt_model.size_z * repeat.y, VOXEL_BRICK_SIZE), round_up_to_multiple(ogt_model.size_y * repeat.z, VOXEL_BRICK_SIZE)); // VOX has different space so we use X Z Y
+        u32 voxel_volume = voxel_model.size.x * voxel_model.size.y * voxel_model.size.z;
+        voxel_model.voxel_occupancy_bricks.resize(voxel_count_to_brick_count(voxel_volume), 0);
+        // TODO: Technically all of our voxel models are now aligned to a size of 64, so we
+        //       don't need voxel_count_to_brick_count anymore and can just divide by 64
 
         auto& new_size = voxel_model.size;
         auto old_size = glm::ivec3(ogt_model.size_x, ogt_model.size_y, ogt_model.size_z);
-
 
         for (i32 z = 0; z < old_size.z; z++)
         {
@@ -153,7 +170,11 @@ void VoxelModels::load(std::filesystem::path path, glm::ivec3 repeat)
 
                                 i32 index = new_x + new_y * new_size.x + new_z * new_size.x * new_size.y;
 
-                                voxel_model.voxels[index] = ogt_model.voxel_data[vox_index];
+                                u32 brick_index = index / VOXELS_PER_BRICK;
+                                u32 brick_local_index = index % VOXELS_PER_BRICK;
+                                if (ogt_model.voxel_data[vox_index] != 0)
+                                    voxel_model.voxel_occupancy_bricks[brick_index] |= (1ull << brick_local_index);
+                                //voxel_model.voxels[index] = ogt_model.voxel_data[vox_index];
                             }
                         }
                     }
