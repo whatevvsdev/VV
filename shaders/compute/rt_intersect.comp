@@ -9,6 +9,7 @@
 
 struct ModelHeader
 {
+	ivec4 size_in_bricks;
 	ivec4 brick_index_and_size_in_voxels;
 	mat4 inverse_transform;
 };
@@ -51,48 +52,32 @@ uint from_3d_to_1d(ivec3 in_3d, ivec3 model_size, int model_offset)
 	return index;
 }
 
-uint voxel_index_to_brick_occupancy_value(ivec3 voxel_position, ivec3 model_size, int model_brick_index)
+uint voxel_index_to_brick_occupancy_value(ivec3 voxel_position, ivec3 model_size, int model_brick_index, ivec3 model_size_in_bricks)
 {
-	ivec3 brick_position = voxel_position / ivec3(VOXEL_BRICK_SIZE);
-	ivec3 brick_local_position = voxel_position % ivec3(VOXEL_BRICK_SIZE);
-	ivec3 model_size_in_bricks = model_size / ivec3(VOXEL_BRICK_SIZE);
+	uvec3 brick_position = voxel_position / VOXEL_BRICK_SIZE;
+	uvec3 brick_local_position = voxel_position % VOXEL_BRICK_SIZE;
 
-	int voxel_1d = voxel_position.x +voxel_position.y * model_size.x + voxel_position.z * model_size.x * model_size.y;
-	int brick_local_position_1d = voxel_1d % VOXELS_PER_BRICK;
-	int brick_position_1d = voxel_1d / VOXELS_PER_BRICK;
+	const uint brick_position_1d =
+		(brick_position.x) +
+		(brick_position.y * model_size_in_bricks.x) +
+		(brick_position.z * model_size_in_bricks.x * model_size_in_bricks.y);
+
+	const uint brick_local_position_1d =
+		(brick_local_position.x) +
+		(brick_local_position.y * VOXEL_BRICK_SIZE) +
+		(brick_local_position.z * (VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE));
 
 	return uint(model_buffer.data[model_brick_index + brick_position_1d] >> brick_local_position_1d) & 1u;
 }
-
-//uint voxel_index_to_brick_occupancy_value(ivec3 voxel_position, ivec3 model_size, int model_brick_index)
-//{
-//	int voxel_1d = voxel_position.x +voxel_position.y * model_size.x + voxel_position.z * model_size.x * model_size.y;
-//	uvec3 brick_position = voxel_position / VOXEL_BRICK_SIZE;
-//	uvec3 brick_local_position = voxel_position % VOXEL_BRICK_SIZE;
-//	uvec3 model_size_in_bricks = model_size / VOXEL_BRICK_SIZE;
-//
-//	const uint brick_position_1d =
-//	(brick_position.x) +
-//	(brick_position.y * model_size_in_bricks.x) +
-//	(brick_position.z * model_size_in_bricks.x * model_size_in_bricks.y);
-//
-//	const uint brick_local_position_1d =
-//	(brick_local_position.x) +
-//	(brick_local_position.y * VOXEL_BRICK_SIZE) +
-//	(brick_local_position.z * (VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE));
-//
-//	return uint(model_buffer.data[model_brick_index + brick_position_1d] >> brick_local_position_1d) & 1u;
-//}
 
 vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3 voxel_start_position)
 {
     ivec3 voxel_position = voxel_start_position;
 	ivec3 size = header.brick_index_and_size_in_voxels.gba;
-
-	//uint64_t current_occupancy_brick;
+	ivec3 size_in_bricks = header.size_in_bricks.rgb;
 
     // If we start inside a voxel, return
-	if (voxel_index_to_brick_occupancy_value(voxel_position, size, header.brick_index_and_size_in_voxels.x) == 1u)
+	if (voxel_index_to_brick_occupancy_value(voxel_position, size, header.brick_index_and_size_in_voxels.x, size_in_bricks) != 0u)
     {
         return vec4(0.0f);
     }
@@ -121,7 +106,7 @@ vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3
 			return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
         }
 
-		if (voxel_index_to_brick_occupancy_value(voxel_position, size, header.brick_index_and_size_in_voxels.x) != 0u)
+		if (voxel_index_to_brick_occupancy_value(voxel_position, size, header.brick_index_and_size_in_voxels.x, size_in_bricks) != 0u)
         {
 			vec3 normal = vec3(0.0f);
 			normal[axis] = -t_sign[axis];

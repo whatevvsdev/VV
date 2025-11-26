@@ -30,6 +30,7 @@ inline u32 round_up_to_multiple(u32 value, u32 multiple)
 */
 struct alignas(16) DeviceVoxelModelInstanceData
 {
+    glm::ivec4 size_in_bricks;
     glm::ivec4 brick_index_and_size_in_voxels;
     glm::mat4 inverse_transform;
 };
@@ -45,6 +46,7 @@ struct VoxelModelData
     std::vector<VoxelOccupancyBrick> voxel_occupancy_bricks;
     //std::vector<Voxel> voxels;
     glm::ivec3 size { glm::ivec3(0) };
+    glm::ivec3 size_in_bricks { glm::ivec3(0) };
     std::vector<InstanceData> instances;
 };
 
@@ -65,6 +67,7 @@ void VoxelModels::upload_models_to_gpu()
 {
     for (i32 i = 0; i < instance_count; i++)
     {
+        device.instances[i].size_in_bricks = glm::ivec4(0, 0, 0, 0);
         device.instances[i].brick_index_and_size_in_voxels = glm::ivec4(0, 0, 0, 0);
         device.instances[i].inverse_transform = glm::mat4(0.0f);
     }
@@ -99,6 +102,7 @@ void VoxelModels::upload_models_to_gpu()
         for (auto& instance : voxel_model.instances)
         {
             auto& writing_instance = device.instances[instance_index];
+            writing_instance.size_in_bricks = glm::ivec4(voxel_model.size_in_bricks, 0);
             writing_instance.brick_index_and_size_in_voxels = glm::ivec4(voxel_brick_offset, voxel_model.size);
             writing_instance.inverse_transform = instance.inverse_transform;
             instance_index++;
@@ -142,6 +146,7 @@ void VoxelModels::load(std::filesystem::path path, glm::ivec3 repeat)
 
         VoxelModelData voxel_model;
         voxel_model.size = glm::ivec3(round_up_to_multiple(ogt_model.size_x * repeat.x, VOXEL_BRICK_SIZE), round_up_to_multiple(ogt_model.size_z * repeat.y, VOXEL_BRICK_SIZE), round_up_to_multiple(ogt_model.size_y * repeat.z, VOXEL_BRICK_SIZE)); // VOX has different space so we use X Z Y
+        voxel_model.size_in_bricks = voxel_model.size / glm::ivec3(VOXEL_BRICK_SIZE);
         u32 voxel_volume = voxel_model.size.x * voxel_model.size.y * voxel_model.size.z;
         voxel_model.voxel_occupancy_bricks.resize(voxel_count_to_brick_count(voxel_volume), 0);
         // TODO: Technically all of our voxel models are now aligned to a size of 64, so we
@@ -168,13 +173,24 @@ void VoxelModels::load(std::filesystem::path path, glm::ivec3 repeat)
                                 i32 new_y = z + old_size.z * rz;
                                 i32 new_z = old_size.y - 1 - y + old_size.y * ry;
 
-                                i32 index = new_x + new_y * new_size.x + new_z * new_size.x * new_size.y;
+                                //i32 index = new_x + new_y * new_size.x + new_z * new_size.x * new_size.y;
 
-                                u32 brick_index = index / VOXELS_PER_BRICK;
-                                u32 brick_local_index = index % VOXELS_PER_BRICK;
+                                glm::uvec3 voxel_position = glm::uvec3(new_x, new_y, new_z);
+                                glm::uvec3 brick_position = voxel_position / VOXEL_BRICK_SIZE;
+                                glm::uvec3 brick_local_position = voxel_position % VOXEL_BRICK_SIZE;
+
+                                u32 brick_index =
+                                    (brick_position.x * 1) +
+                                    (brick_position.y * voxel_model.size_in_bricks.x) +
+                                    (brick_position.z * voxel_model.size_in_bricks.x * voxel_model.size_in_bricks.y);
+
+                                u32 brick_local_index =
+                                    (brick_local_position.x * 1) +
+                                    (brick_local_position.y * VOXEL_BRICK_SIZE) +
+                                    (brick_local_position.z * VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE);
+
                                 if (ogt_model.voxel_data[vox_index] != 0)
                                     voxel_model.voxel_occupancy_bricks[brick_index] |= (1ull << brick_local_index);
-                                //voxel_model.voxels[index] = ogt_model.voxel_data[vox_index];
                             }
                         }
                     }
