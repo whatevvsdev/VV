@@ -331,6 +331,8 @@ void Renderer::end_frame()
 
     u32 dispatch_width = std::ceil(swapchain_data.surface_extent.width / 16.0);
     u32 dispatch_height = std::ceil(swapchain_data.surface_extent.height / 16.0);
+    u32 dispatch_width2 = std::ceil(swapchain_data.surface_extent.width / 8.0);
+    u32 dispatch_height2 = std::ceil(swapchain_data.surface_extent.height / 8.0);
 
     compute_push_constants.render_extent = glm::ivec2(swapchain_data.surface_extent.width, swapchain_data.surface_extent.height);
 
@@ -339,7 +341,7 @@ void Renderer::end_frame()
     ProfilingQueries::device_stop("raygen", per_frame_data.command_buffer);
 
     ProfilingQueries::device_start("intersect", per_frame_data.command_buffer);
-    state.intersect_pipeline.dispatch(per_frame_data.command_buffer, dispatch_width, dispatch_height, 1, &compute_push_constants);
+    state.intersect_pipeline.dispatch(per_frame_data.command_buffer, dispatch_width2, dispatch_height2, 1, &compute_push_constants);
     ProfilingQueries::device_stop("intersect", per_frame_data.command_buffer);
 
     ProfilingQueries::device_start("shade", per_frame_data.command_buffer);

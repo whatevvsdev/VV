@@ -14,7 +14,7 @@ struct ModelHeader
 	mat4 inverse_transform;
 };
 
-layout (local_size_x = 16, local_size_y = 16) in;
+layout (local_size_x = 8, local_size_y = 8) in;
 
 layout(set = 0, binding = 0) buffer RayGenIn
 {
@@ -52,32 +52,38 @@ uint from_3d_to_1d(ivec3 in_3d, ivec3 model_size, int model_offset)
 	return index;
 }
 
-uint voxel_index_to_brick_occupancy_value(ivec3 voxel_position, ivec3 model_size, int model_brick_index, ivec3 model_size_in_bricks)
+uint64_t get_voxel_occupancy_brick(uvec3 brick_position, ivec3 model_size_in_bricks, int model_brick_index)
 {
-	uvec3 brick_position = voxel_position / VOXEL_BRICK_SIZE;
-	uvec3 brick_local_position = voxel_position % VOXEL_BRICK_SIZE;
-
 	const uint brick_position_1d =
 		(brick_position.x) +
 		(brick_position.y * model_size_in_bricks.x) +
 		(brick_position.z * model_size_in_bricks.x * model_size_in_bricks.y);
 
+	return model_buffer.data[model_brick_index + brick_position_1d];
+}
+
+uint unpack_voxel_from_occupancy_brick(uvec3 voxel_position, uint64_t brick)
+{
+	uvec3 brick_local_position = (voxel_position & uvec3(3u));
 	const uint brick_local_position_1d =
 		(brick_local_position.x) +
 		(brick_local_position.y * VOXEL_BRICK_SIZE) +
 		(brick_local_position.z * (VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE));
 
-	return uint(model_buffer.data[model_brick_index + brick_position_1d] >> brick_local_position_1d) & 1u;
+	return uint(brick >> brick_local_position_1d) & 1u;
 }
 
 vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3 voxel_start_position)
 {
-    ivec3 voxel_position = voxel_start_position;
+    uvec3 voxel_position = uvec3(voxel_start_position);
 	ivec3 size = header.brick_index_and_size_in_voxels.gba;
 	ivec3 size_in_bricks = header.size_in_bricks.rgb;
 
-    // If we start inside a voxel, return
-	if (voxel_index_to_brick_occupancy_value(voxel_position, size, header.brick_index_and_size_in_voxels.x, size_in_bricks) != 0u)
+	uvec3 brick_position = uvec3(voxel_position) >> uvec3(2);
+	uint64_t current_occupancy_brick = get_voxel_occupancy_brick(brick_position, size_in_bricks, header.brick_index_and_size_in_voxels.r);
+
+	// If we start inside a voxel, return
+	if (current_occupancy_brick != 0u && unpack_voxel_from_occupancy_brick(voxel_position, current_occupancy_brick) != 0u)
     {
         return vec4(0.0f);
     }
@@ -97,7 +103,7 @@ vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3
             axis = 2;
         }
 
-        voxel_position[axis] += t_sign[axis];
+		voxel_position[axis] += t_sign[axis];
         t_max[axis] += t_delta[axis];
 
         // Check bounds
@@ -106,16 +112,21 @@ vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3
 			return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
         }
 
-		if (voxel_index_to_brick_occupancy_value(voxel_position, size, header.brick_index_and_size_in_voxels.x, size_in_bricks) != 0u)
+		if (brick_position[axis] != voxel_position[axis] / VOXEL_BRICK_SIZE)
+		{
+			brick_position[axis] = voxel_position[axis] / VOXEL_BRICK_SIZE;
+			current_occupancy_brick = get_voxel_occupancy_brick(brick_position, size_in_bricks, header.brick_index_and_size_in_voxels.r);
+		}
+
+		if (unpack_voxel_from_occupancy_brick(voxel_position, current_occupancy_brick) != 0u)
         {
 			vec3 normal = vec3(0.0f);
 			normal[axis] = -t_sign[axis];
-			state.dummy_temp_voxel_pos[0] = voxel_position[0];
-			state.dummy_temp_voxel_pos[1] = voxel_position[1];
-			state.dummy_temp_voxel_pos[2] = voxel_position[2];
+			state.dummy_temp_voxel_pos[0] = int(voxel_position[0]);
+			state.dummy_temp_voxel_pos[1] = int(voxel_position[1]);
+			state.dummy_temp_voxel_pos[2] = int(voxel_position[2]);
             return vec4(t_max[axis] - t_delta[axis], normal);
         }
-		check -= 1;
     }
 	return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
 }
@@ -157,39 +168,37 @@ void intersect(inout IntersectionState state, Ray ray)
 {
 	for(int i = 0; i < MODEL_INSTANCE_COUNT; i++)
 	{
-		int header_index = model_buffer.headers[i].brick_index_and_size_in_voxels.x;
-		ivec3 model_size = model_buffer.headers[i].brick_index_and_size_in_voxels.yzw;
+		ModelHeader model_header = model_buffer.headers[i];
+		ivec3 model_size = model_header.brick_index_and_size_in_voxels.yzw;
 
 		if (model_size.x + model_size.y + model_size.z == 0)
 			break;
 
 		vec3 half_size = vec3(model_size) * 0.5f;
 
-		Ray aabb_ray = ray;
-		aabb_ray.position = (model_buffer.headers[i].inverse_transform * vec4(aabb_ray.position, 1.0f)).rgb;
-		aabb_ray.direction = normalize(model_buffer.headers[i].inverse_transform * vec4(aabb_ray.direction, 0.0f)).rgb;
+		Ray instance_ray = ray;
+		instance_ray.position = (model_header.inverse_transform * vec4(ray.position, 1.0f)).rgb;
+		instance_ray.direction = normalize(model_header.inverse_transform * vec4(ray.direction, 0.0f)).rgb;
 
 		vec4 t_normal = vec4(0.0f, 1.0f, 1.0f, 1.0f);
 		// If not inside the AABB
-		if (aabb_ray.position != clamp(aabb_ray.position, -half_size, half_size))
+		if (instance_ray.position != clamp(instance_ray.position, -half_size, half_size))
 		{
-			t_normal = intersect_aabb(-half_size, half_size, aabb_ray);
+			t_normal = intersect_aabb(-half_size, half_size, instance_ray);
 		}
 
 		// Closer than current hit
 		if (t_normal.x < state.t)
 		{
 			vec3 hit_pos = ray.position + ray.direction * (t_normal.r - EPSILON);
-			vec3 in_volume_position = (model_buffer.headers[i].inverse_transform * vec4(hit_pos, 1.0f)).xyz + half_size;
+			vec3 in_volume_position = (model_header.inverse_transform * vec4(hit_pos, 1.0f)).xyz + half_size;
 			ivec3 voxel_position = ivec3(floor(in_volume_position));
 
-			Ray dda_ray;
-			dda_ray.position = clamp(in_volume_position, vec3(EPSILON), model_size - vec3(EPSILON));;
-			dda_ray.direction = aabb_ray.direction;
+			instance_ray.position = clamp(in_volume_position, vec3(EPSILON), model_size - vec3(EPSILON));;
 
 			voxel_position = clamp(voxel_position, ivec3(0), ivec3(model_size) - ivec3(1));
 
-			vec4 dda_t_normal = DDA(state, dda_ray, model_buffer.headers[i], voxel_position);
+			vec4 dda_t_normal = DDA(state, instance_ray, model_header, voxel_position);
 
 			float total_distance = t_normal.x + dda_t_normal.x;
 			if (total_distance < state.t)
@@ -204,10 +213,9 @@ void intersect(inout IntersectionState state, Ray ray)
 
 void main()
 {
-    ivec2 texel_coord = ivec2(gl_GlobalInvocationID.xy);
-    uint index = texel_coord.x + texel_coord.y * push_constants.render_extent.x;
+    uint index = int(gl_GlobalInvocationID.x) + int(gl_GlobalInvocationID.y) * push_constants.render_extent.x;
 
-	if (texel_coord.x >= push_constants.render_extent.x || texel_coord.y >= push_constants.render_extent.y)
+	if (int(gl_GlobalInvocationID.x) >= push_constants.render_extent.x || int(gl_GlobalInvocationID.y) >= push_constants.render_extent.y)
 	{
 		return;
 	}
