@@ -24,7 +24,8 @@ DeviceResources::Buffer DeviceResources::create_buffer(const std::string& buffer
         VmaAllocationCreateInfo vma_allocation_create_info
         {
             // TODO: VMA_MEMORY_USAGE_CPU_TO_GPU is deprecated
-            .usage = cpu_to_gpu ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_AUTO,
+            .flags = cpu_to_gpu ? VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT : 0u,
+            .usage = VMA_MEMORY_USAGE_AUTO,
         };
         
         vmaCreateBuffer(Renderer::Core::get_vma_allocator(), &buffer_create_info, &vma_allocation_create_info, &created_buffer.handle, &created_buffer.allocation, nullptr);
