@@ -5,6 +5,7 @@
 #include "vv_vulkan.h"
 #include "vk_mem_alloc.h"
 #include <string>
+#include <functional>
 #include "../../common/types.h"
 
 #if RENDERER_DEBUG
@@ -71,6 +72,8 @@ namespace Renderer
 
         void initialize(SDL_Window* sdl_window_ptr);
         void terminate();
+
+        void submit_immediate_command(std::function<void(VkCommandBuffer cmd)>&& function);
 
         const PerFrameData& begin_frame();
         void end_frame();

@@ -72,22 +72,20 @@ void VoxelModels::upload_models_to_gpu()
         device.instances[i].inverse_transform = glm::mat4(0.0f);
     }
 
-    //u32 total_model_size_in_voxels { 0 };
     u32 voxel_brick_count_of_all_models_combined { 0 };
 
     for (auto& [key, voxel_model] : internal.voxel_models)
     {
         auto model_size_in_voxels = voxel_model.size.x * voxel_model.size.y * voxel_model.size.z;
-        //total_model_size_in_voxels += model_size_in_voxels;
         voxel_brick_count_of_all_models_combined += voxel_count_to_brick_count(model_size_in_voxels);
     }
 
-    auto created_buffer = DeviceResources::create_buffer("voxel_data", sizeof(DeviceVoxelModelInstanceData) * instance_count + voxel_brick_count_of_all_models_combined * sizeof(VoxelOccupancyBrick), true);
+    auto created_buffer = DeviceResources::create_buffer("voxel_data", sizeof(DeviceVoxelModelInstanceData) * instance_count + voxel_brick_count_of_all_models_combined * sizeof(VoxelOccupancyBrick));
 
     i32 header_data_size = instance_count * sizeof(DeviceVoxelModelInstanceData);
+    i32 total_data_size = header_data_size + voxel_brick_count_of_all_models_combined * sizeof(VoxelOccupancyBrick);
     u8* mapped_data { nullptr };
-    vmaMapMemory(Renderer::Core::get_vma_allocator(), created_buffer.allocation, reinterpret_cast<void**>(&mapped_data));
-    memset(mapped_data, 0, header_data_size + voxel_brick_count_of_all_models_combined * sizeof(VoxelOccupancyBrick));
+    mapped_data = new u8[total_data_size];
 
     // Copy voxel data to GPU and set instance data
     i32 voxel_brick_offset { 0 };
@@ -114,7 +112,9 @@ void VoxelModels::upload_models_to_gpu()
     // Copy instance headers to GPU
     memcpy(mapped_data, device.instances, header_data_size);
 
-    vmaUnmapMemory(Renderer::Core::get_vma_allocator(), created_buffer.allocation);
+    DeviceResources::immediate_copy_data_to_gpu("voxel_data", mapped_data, total_data_size);
+    delete[] mapped_data;
+
 }
 
 // Holy this is a mess, but it works

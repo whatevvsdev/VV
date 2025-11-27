@@ -69,6 +69,13 @@ namespace Renderer::Core
 
         PerFrameData* per_frame_data { nullptr };
 
+        struct
+        {
+            VkFence fence;
+            VkCommandPool command_pool;
+            VkCommandBuffer command_buffer;
+        } immediate_submit;
+
     } internal;
 
     const std::vector<const char*> validation_layers = {
@@ -523,6 +530,36 @@ namespace Renderer::Core
         create_command_buffers();
     }
 
+    void create_immediate_submit_fence_command_buffer_and_pool()
+    {
+        VkCommandPoolCreateInfo command_pool_create_info
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+        };
+
+        VK_CHECK(vkCreateCommandPool(internal.device, &command_pool_create_info, nullptr, &internal.immediate_submit.command_pool));
+        QUEUE_FUNCTION(FunctionQueueLifetime::CORE, vkDestroyCommandPool(internal.device, internal.immediate_submit.command_pool, nullptr));
+
+        VkCommandBufferAllocateInfo command_buffer_allocate_info
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = internal.immediate_submit.command_pool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
+
+        VK_CHECK(vkAllocateCommandBuffers(internal.device, &command_buffer_allocate_info, &internal.immediate_submit.command_buffer));
+
+        VkFenceCreateInfo upload_fence_create_info
+        {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        };
+
+        VK_CHECK(vkCreateFence(Renderer::Core::get_logical_device(), &upload_fence_create_info, nullptr, &internal.immediate_submit.fence));
+        QUEUE_FUNCTION(FunctionQueueLifetime::CORE, vkDestroyFence(Renderer::Core::get_logical_device(), internal.immediate_submit.fence, nullptr));
+    }
+
     AllocatedImage create_image(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage_flags, VkImageAspectFlags aspect_flags, const std::string& name)
     {
         AllocatedImage new_image {};
@@ -598,6 +635,7 @@ namespace Renderer::Core
         create_command_pool();
         create_command_buffers();
         create_sync_objects();
+        create_immediate_submit_fence_command_buffer_and_pool();
         initalize_imgui();
         ProfilingQueries::initialize(internal.physical_device, internal.device);
         QUEUE_FUNCTION(FunctionQueueLifetime::CORE, ProfilingQueries::terminate(internal.device));
@@ -611,6 +649,47 @@ namespace Renderer::Core
 
         QUEUE_FLUSH(FunctionQueueLifetime::SWAPCHAIN);
         QUEUE_FLUSH(FunctionQueueLifetime::CORE);
+    }
+
+    void submit_immediate_command(std::function<void(VkCommandBuffer cmd)>&& function)
+    {
+        VkCommandBuffer cmd = internal.immediate_submit.command_buffer;
+
+        VkCommandBufferBeginInfo info
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .pNext = nullptr,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        };
+
+        VK_CHECK(vkBeginCommandBuffer(cmd, &info));
+
+        function(cmd);
+
+        vkWaitForFences(Renderer::Core::get_logical_device(), 1, &internal.immediate_submit.fence, true, 9999999999);
+        vkResetFences(Renderer::Core::get_logical_device(), 1, &internal.immediate_submit.fence);
+
+        VK_CHECK(vkEndCommandBuffer(cmd));
+
+        VkSubmitInfo submit_info
+        {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .waitSemaphoreCount = 0,
+            .pWaitSemaphores = nullptr,
+            .pWaitDstStageMask = nullptr,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &cmd,
+            .signalSemaphoreCount = 0,
+            .pSignalSemaphores = nullptr,
+        };
+
+        VK_CHECK(vkQueueSubmit(internal.queue, 1, &submit_info, internal.immediate_submit.fence));
+
+        vkWaitForFences(internal.device, 1, &internal.immediate_submit.fence, true, 9999999999);
+        vkResetFences(internal.device, 1, &internal.immediate_submit.fence);
+
+        vkResetCommandPool(internal.device, internal.immediate_submit.command_pool, 0);
     }
 
     const PerFrameData& begin_frame()
