@@ -5,12 +5,10 @@ struct Ray // 32 Bytes
     vec3 direction;
 };
 
-struct IntersectResult // 48 Bytes
+struct IntersectResult // 32 Bytes
 {
-    float hit_distance;
-    int dummy_temp_voxel_pos[3];
-    vec3 incoming_direction;
-    vec3 normal;
+    vec4 incoming_direction_and_hit_distance;
+    vec4 normal;
 };
 
 vec3 get_translation_from_matrix(mat4 matrix)

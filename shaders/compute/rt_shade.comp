@@ -36,25 +36,21 @@ vec3 hash( vec3 f )
 
 void main()
 {
-    ivec2 texel_coord = ivec2(gl_GlobalInvocationID.xy);
-    uint index = texel_coord.x + texel_coord.y * push_constants.render_extent.x;
+    uint index = int(gl_GlobalInvocationID.x) + int(gl_GlobalInvocationID.y) * push_constants.render_extent.x;
 
-    if (texel_coord.x >= push_constants.render_extent.x || texel_coord.y >= push_constants.render_extent.y)
+    if (int(gl_GlobalInvocationID.x) >= push_constants.render_extent.x || int(gl_GlobalInvocationID.y) >= push_constants.render_extent.y)
     {
         return;
     }
 
     IntersectResult result = intersection_buffer.results[index];
 
-    if (result.hit_distance != FLT_MAX)
+    if (result.incoming_direction_and_hit_distance.a != FLT_MAX)
     {
-        //float max_depth_length = 512.0f;//max(model_buffer.size.x, max(model_buffer.size.y, model_buffer.size.z)) + 256.0f;
-        //imageStore(image, texel_coord, vec4(result.normal * 0.5 + vec3(0.5f), 1.0f));
-        vec3 resultpos = vec3(float(result.dummy_temp_voxel_pos[0]), float(result.dummy_temp_voxel_pos[1]), float(result.dummy_temp_voxel_pos[2]));
-       imageStore(image, texel_coord, vec4(hash(resultpos) * 0.3f + (result.normal * 0.5 + vec3(0.5f)) * 0.7f, 1.0f));
+       imageStore(image, ivec2(gl_GlobalInvocationID), vec4(vec3(result.normal.rgb) * 0.5 + vec3(0.5f), 1.0f));
     }
     else
     {
-        imageStore(image, texel_coord, vec4(0.0f));
+        imageStore(image, ivec2(gl_GlobalInvocationID), vec4(0.0f));
     }
 }

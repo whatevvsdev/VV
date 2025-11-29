@@ -31,10 +31,9 @@ vec3 generate_pinhole_ray_direction(ivec2 image_size, mat4 matrix)
 
 void main()
 {
-	ivec2 texel_coord = ivec2(gl_GlobalInvocationID.xy);
-	uint index = texel_coord.x + texel_coord.y * push_constants.render_extent.x;
+	uint index = int(gl_GlobalInvocationID.x) + int(gl_GlobalInvocationID.y) * push_constants.render_extent.x;
 
-	if (texel_coord.x >= push_constants.render_extent.x || texel_coord.y >= push_constants.render_extent.y)
+	if (int(gl_GlobalInvocationID.x) >= push_constants.render_extent.x || int(gl_GlobalInvocationID.y) >= push_constants.render_extent.y)
 	{
 		return;
 	}

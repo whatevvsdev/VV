@@ -70,17 +70,9 @@ struct alignas(16) Ray
 
 struct alignas(16) IntersectionResult
 {
-    float hit_distance;
-    float dummy[3];
-    glm::vec3 incoming_direction;
-    glm::vec3 normal;
+    glm::vec4 incoming_direction_and_distance;
+    glm::vec4 normal;
 };
-
-void load_voxel_data()
-{
-    VoxelModels::load("../monu1.vox", glm::ivec3(8));
-    VoxelModels::upload_models_to_gpu();
-}
 
 void create_raygen_pipeline()
 {
@@ -163,7 +155,9 @@ void Renderer::initialize(SDL_Window* sdl_window_ptr)
 
     DeviceResources::create_buffer("raygen_buffer", sizeof(Ray) * swapchain_data.surface_extent.width * swapchain_data.surface_extent.height);
     DeviceResources::create_buffer("intersection_results", sizeof(IntersectionResult) * swapchain_data.surface_extent.width * swapchain_data.surface_extent.height);
-    load_voxel_data();
+
+    VoxelModels::load("../monu1.vox", glm::ivec3(6));
+    VoxelModels::upload_models_to_gpu();
 
     create_raygen_pipeline();
     create_intersection_pipeline();
@@ -372,6 +366,7 @@ void Renderer::end_frame()
 
     ProfilingQueries::host_stop("frame submit");
     Renderer::Core::end_frame();
+    //SDL_Delay(30);
 }
 
 void Renderer::terminate()

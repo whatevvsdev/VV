@@ -31,7 +31,8 @@ DeviceResources::Buffer DeviceResources::create_buffer(const std::string& buffer
 
         VmaAllocationCreateInfo vma_allocation_create_info
         {
-            .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+            .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+            .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         };
         
         vmaCreateBuffer(Renderer::Core::get_vma_allocator(), &buffer_create_info, &vma_allocation_create_info, &created_buffer.handle, &created_buffer.allocation, nullptr);
@@ -72,6 +73,7 @@ void DeviceResources::immediate_copy_data_to_gpu(const std::string& buffer_name,
     staging_buffer.size = size_in_bytes;
 
     void* mapped_data;
+    printf("transferring");
     vmaMapMemory(Renderer::Core::get_vma_allocator(), staging_buffer.allocation, &mapped_data);
     memcpy(mapped_data, data, size_in_bytes);
     vmaUnmapMemory(Renderer::Core::get_vma_allocator(), staging_buffer.allocation);

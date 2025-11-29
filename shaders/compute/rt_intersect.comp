@@ -62,20 +62,19 @@ uint64_t get_voxel_occupancy_brick(uvec3 brick_position, ivec3 model_size_in_bri
 	return model_buffer.data[model_brick_index + brick_position_1d];
 }
 
-uint unpack_voxel_from_occupancy_brick(uvec3 voxel_position, uint64_t brick)
+uint unpack_voxel_from_occupancy_brick(uvec3 local_position, uint64_t brick)
 {
-	uvec3 brick_local_position = (voxel_position & uvec3(3u));
 	const uint brick_local_position_1d =
-		(brick_local_position.x) +
-		(brick_local_position.y * VOXEL_BRICK_SIZE) +
-		(brick_local_position.z * (VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE));
+		(local_position.x) +
+		(local_position.y * VOXEL_BRICK_SIZE) +
+		(local_position.z * (VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE));
 
 	return uint(brick >> brick_local_position_1d) & 1u;
 }
 
-vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3 voxel_start_position)
+vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header)
 {
-    uvec3 voxel_position = uvec3(voxel_start_position);
+	uvec3 voxel_position = uvec3(ray.position);
 	ivec3 size = header.brick_index_and_size_in_voxels.gba;
 	ivec3 size_in_bricks = header.size_in_bricks.rgb;
 
@@ -83,54 +82,155 @@ vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3
 	uint64_t current_occupancy_brick = get_voxel_occupancy_brick(brick_position, size_in_bricks, header.brick_index_and_size_in_voxels.r);
 
 	// If we start inside a voxel, return
-	if (current_occupancy_brick != 0u && unpack_voxel_from_occupancy_brick(voxel_position, current_occupancy_brick) != 0u)
-    {
-        return vec4(0.0f);
-    }
+	if (current_occupancy_brick != 0u && unpack_voxel_from_occupancy_brick(voxel_position & uvec3(3u), current_occupancy_brick) != 0u)
+	{
+		return vec4(0.0f);
+	}
 
-    // Voxel Marching
+	// Voxel Marching
 	const ivec3 t_sign = ivec3(sign(ray.direction));
-    const vec3 t_delta = abs(vec3(1.0f) / ray.direction);
-	vec3 t_max = abs(fract(ray.position) - max(t_sign, vec3(0))) * t_delta;
+	const vec3 t_delta = abs(vec3(1.0f) / ray.direction);
+	vec3 t_max = abs(fract(ray.position) - max(t_sign, vec3(0.0f))) * t_delta;
 
 	uint check = size.x + size.y + size.z;
-    while (check > 0)
-    {
-        // Find the smallest t_max component
-        int axis = int(t_max.y < t_max.x);
-        if (t_max.z < t_max[axis])
-        {
-            axis = 2;
-        }
+	while (check > 0)
+	{
+		// Find the smallest t_max component
+		int axis = (t_max[2] < min(t_max[0], t_max[1])) ? 2 : int(t_max[0] > t_max[1]);
 
 		voxel_position[axis] += t_sign[axis];
-        t_max[axis] += t_delta[axis];
+		uint voxel_axis_position = voxel_position[axis];
+		t_max[axis] += t_delta[axis];
 
-        // Check bounds
-		if (voxel_position[axis] < 0 || voxel_position[axis] >= size[axis])
+		if (brick_position != (voxel_position >> ivec3(2)))
 		{
-			return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
-        }
-
-		if (brick_position[axis] != voxel_position[axis] / VOXEL_BRICK_SIZE)
-		{
-			brick_position[axis] = voxel_position[axis] / VOXEL_BRICK_SIZE;
+			brick_position = (voxel_position >> ivec3(2));
+			// Check bounds, since we know are always aligned to a brick at least we can do it here
+			if (voxel_axis_position < 0 || voxel_axis_position >= size[axis])
+			{
+				return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
+			}
 			current_occupancy_brick = get_voxel_occupancy_brick(brick_position, size_in_bricks, header.brick_index_and_size_in_voxels.r);
 		}
 
-		if (unpack_voxel_from_occupancy_brick(voxel_position, current_occupancy_brick) != 0u)
-        {
+		if (current_occupancy_brick != 0 && unpack_voxel_from_occupancy_brick(voxel_position & uvec3(3u), current_occupancy_brick) != 0u)
+		{
 			vec3 normal = vec3(0.0f);
 			normal[axis] = -t_sign[axis];
 			state.dummy_temp_voxel_pos[0] = int(voxel_position[0]);
 			state.dummy_temp_voxel_pos[1] = int(voxel_position[1]);
 			state.dummy_temp_voxel_pos[2] = int(voxel_position[2]);
-            return vec4(t_max[axis] - t_delta[axis], normal);
-        }
-    }
+			return vec4(t_max[axis] - t_delta[axis], normal);
+		}
+		check -= 1;
+	}
 	return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
 }
 
+vec4 Sub_Brick_DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3 t_sign, vec3 t_delta, inout int brick_steps_taken, inout uint64_t current_occupancy_brick)
+{
+	uvec3 voxel_position = uvec3(ray.position);
+	ivec3 size = header.brick_index_and_size_in_voxels.gba;
+	ivec3 size_in_bricks = header.size_in_bricks.rgb;
+
+	uvec3 brick_position = uvec3(voxel_position) >> uvec3(2);
+
+	// If we start inside a voxel, return
+	if (unpack_voxel_from_occupancy_brick(voxel_position & uvec3(3u), current_occupancy_brick) != 0u)
+		return vec4(0.0f);
+
+	// Voxel Marching
+	vec3 t_max = abs(fract(ray.position) - max(t_sign, vec3(0.0f))) * t_delta;
+
+	while (true)
+	{
+		// Find the smallest t_max component
+		int axis = (t_max[2] < min(t_max[0], t_max[1])) ? 2 : int(t_max[0] > t_max[1]);
+
+		voxel_position[axis] += t_sign[axis];
+		t_max[axis] += t_delta[axis];
+
+		if (brick_position != (voxel_position >> ivec3(2)))
+		{
+			brick_steps_taken += 1;
+			brick_position = (voxel_position >> ivec3(2));
+			// Check bounds, since we know are always aligned to a brick at least we can do it here
+			if (voxel_position[axis] < 0 || voxel_position[axis] >= size[axis])
+			{
+				return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
+			}
+			current_occupancy_brick = get_voxel_occupancy_brick(brick_position, size_in_bricks, header.brick_index_and_size_in_voxels.r);
+		}
+
+		if (current_occupancy_brick != 0 && unpack_voxel_from_occupancy_brick(voxel_position & uvec3(3u), current_occupancy_brick) != 0u)
+		{
+			vec3 normal = vec3(0.0f);
+			normal[axis] = -t_sign[axis];
+			return vec4(t_max[axis] - t_delta[axis], normal);
+		}
+	}
+	return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
+}
+
+vec4 Brick_DDA(inout IntersectionState state, Ray ray, inout ModelHeader header)
+{
+	ivec3 size = header.brick_index_and_size_in_voxels.gba;
+	ivec3 size_in_bricks = header.size_in_bricks.rgb;
+
+	uvec3 brick_position = uvec3(ray.position) >> uvec3(2);
+	uint64_t current_occupancy_brick = get_voxel_occupancy_brick(brick_position, size_in_bricks, header.brick_index_and_size_in_voxels.r);
+
+	// If we start inside a brick
+	if (current_occupancy_brick != 0u)
+		return vec4(0.0f);
+
+	// Voxel Marching
+	const ivec3 t_sign = ivec3(sign(ray.direction));
+	const vec3 t_delta = abs(vec3(1.0f) / ray.direction);
+	vec3 t_max = abs(fract(ray.position * 0.25f) - max(t_sign, vec3(0.0f))) * t_delta;
+
+	int inner_brick_steps_taken = 0; // Used for bricks traversed by Sub_Brick_DDA
+	while (true)
+	{
+		// Find the smallest t_max component
+		int axis = (t_max[2] < min(t_max[0], t_max[1])) ? 2 : int(t_max[0] > t_max[1]);
+
+		brick_position[axis] += t_sign[axis];
+		t_max[axis] += t_delta[axis];
+
+		if (brick_position[axis] < 0 || brick_position[axis] >= size_in_bricks[axis])
+		{
+			return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
+		}
+
+		if (inner_brick_steps_taken <= 0)
+		{
+			current_occupancy_brick = get_voxel_occupancy_brick(brick_position, size_in_bricks, header.brick_index_and_size_in_voxels.r);
+
+			if (current_occupancy_brick != 0)
+			{
+				Ray new_ray = ray;
+				new_ray.position = ray.position + ray.direction * (t_max[axis] - t_delta[axis]) * 4.0f;
+				new_ray.position = clamp(new_ray.position, vec3(brick_position) * 4.0f + vec3(EPSILON), vec3(brick_position + vec3(1.0f - EPSILON)) * 4.0f);
+
+				vec4 dda_t_normal = Sub_Brick_DDA(state, new_ray, header, t_sign, t_delta, inner_brick_steps_taken, current_occupancy_brick);
+
+				if (dda_t_normal.r != FLT_MAX && dda_t_normal.r > 0.0f)
+				{
+					return vec4(t_max[axis] - t_delta[axis] + dda_t_normal.r, dda_t_normal.gba);
+				}
+				else if (dda_t_normal.r == 0)
+				{
+					vec3 normal = vec3(0.0f);
+					normal[axis] = -t_sign[axis];
+					return vec4(t_max[axis] - t_delta[axis], normal);
+				}
+			}
+		}
+		inner_brick_steps_taken -= 1;
+	}
+	return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
+}
 
 vec4 intersect_aabb(vec3 aabbmin, vec3 aabbmax, Ray ray)
 {
@@ -185,6 +285,8 @@ void intersect(inout IntersectionState state, Ray ray)
 		if (instance_ray.position != clamp(instance_ray.position, -half_size, half_size))
 		{
 			t_normal = intersect_aabb(-half_size, half_size, instance_ray);
+			if (t_normal.r == FLT_MAX)
+				break;
 		}
 
 		// Closer than current hit
@@ -194,11 +296,10 @@ void intersect(inout IntersectionState state, Ray ray)
 			vec3 in_volume_position = (model_header.inverse_transform * vec4(hit_pos, 1.0f)).xyz + half_size;
 			ivec3 voxel_position = ivec3(floor(in_volume_position));
 
-			instance_ray.position = clamp(in_volume_position, vec3(EPSILON), model_size - vec3(EPSILON));;
+			instance_ray.position = clamp(in_volume_position, vec3(EPSILON), model_size - vec3(EPSILON));
 
-			voxel_position = clamp(voxel_position, ivec3(0), ivec3(model_size) - ivec3(1));
-
-			vec4 dda_t_normal = DDA(state, instance_ray, model_header, voxel_position);
+			//vec4 dda_t_normal = DDA(state, instance_ray, model_header);
+			vec4 dda_t_normal = Brick_DDA(state, instance_ray, model_header);
 
 			float total_distance = t_normal.x + dda_t_normal.x;
 			if (total_distance < state.t)
@@ -230,12 +331,6 @@ void main()
 
 	intersect(state, ray);
 
-	intersection_buffer.results[index].hit_distance = state.t;
-	intersection_buffer.results[index].incoming_direction = ray.direction;
-	intersection_buffer.results[index].normal = state.normal;
-	intersection_buffer.results[index].dummy_temp_voxel_pos[0] = state.dummy_temp_voxel_pos[0];
-	intersection_buffer.results[index].dummy_temp_voxel_pos[1] = state.dummy_temp_voxel_pos[1];
-	intersection_buffer.results[index].dummy_temp_voxel_pos[2] = state.dummy_temp_voxel_pos[2];
-
-
+	intersection_buffer.results[index].incoming_direction_and_hit_distance = vec4(ray.direction, state.t);
+	intersection_buffer.results[index].normal = vec4(state.normal, 0.0f);
 }

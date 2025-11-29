@@ -19,7 +19,7 @@ struct
 {
     SDL_Window* window { nullptr };
 
-    glm::vec3 position { glm::vec3(0.0f, 0.0f, 700.0f)};
+    glm::vec3 position { glm::vec3(0.0f, 0.0f, 50.0f)};
     f32 pitch {};
     f32 yaw {};
     glm::mat4 matrix {};
