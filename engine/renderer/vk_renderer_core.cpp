@@ -94,6 +94,7 @@ namespace Renderer::Core
     std::vector<const char*> device_extensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+        VK_KHR_SHADER_CLOCK_EXTENSION_NAME,
     };
 
     // Internal Functions
