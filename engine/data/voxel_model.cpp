@@ -2,6 +2,8 @@
 #include "../renderer/renderer_core.h"
 #include "../renderer/device_resources.h"
 #include "../../common/io.h"
+#include "../../common/math.h"
+#include "../data/acceleration_structures/voxel_brick.h"
 
 #include "ogt_vox.h"
 #include <glm/glm.hpp>
@@ -11,19 +13,6 @@
 
 
 typedef u32 Voxel;
-typedef u64 VoxelOccupancyBrick; // We use a 4^3 brick
-constexpr u32 VOXEL_BRICK_SIZE = 4;
-constexpr u32 VOXELS_PER_BRICK = VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE;
-
-constexpr u32 voxel_count_to_brick_count(u32 voxel_count)
-{
-    return (voxel_count + VOXELS_PER_BRICK - 1) / VOXELS_PER_BRICK;
-}
-
-inline u32 round_up_to_multiple(u32 value, u32 multiple)
-{
-    return (value + multiple - 1) / multiple * multiple;
-}
 
 /* TODO: this is currently technically an instance, not a model
     but it makes no sense to split it atm.
@@ -43,10 +32,8 @@ struct VoxelModelData
         u32 model_index;
     };
 
-    std::vector<VoxelOccupancyBrick> voxel_occupancy_bricks;
-    //std::vector<Voxel> voxels;
+    Data::AS::VoxelBrickAS brick_as;
     glm::ivec3 size { glm::ivec3(0) };
-    glm::ivec3 size_in_bricks { glm::ivec3(0) };
     std::vector<InstanceData> instances;
 };
 
@@ -77,7 +64,7 @@ void VoxelModels::upload_models_to_gpu()
     for (auto& [key, voxel_model] : internal.voxel_models)
     {
         auto model_size_in_voxels = voxel_model.size.x * voxel_model.size.y * voxel_model.size.z;
-        voxel_brick_count_of_all_models_combined += voxel_count_to_brick_count(model_size_in_voxels);
+        voxel_brick_count_of_all_models_combined += voxel_model.brick_as.bricks.size();
     }
 
     auto created_buffer = DeviceResources::create_buffer("voxel_data", sizeof(DeviceVoxelModelInstanceData) * instance_count + voxel_brick_count_of_all_models_combined * sizeof(VoxelOccupancyBrick));
@@ -93,14 +80,14 @@ void VoxelModels::upload_models_to_gpu()
     for (auto& [key, voxel_model] : internal.voxel_models)
     {
         i32 volume = voxel_model.size.x * voxel_model.size.y * voxel_model.size.z;
-        u32 brick_count = voxel_count_to_brick_count(volume);
+        u32 brick_count = voxel_model.brick_as.bricks.size();
 
-        memcpy(mapped_data + header_data_size + voxel_brick_offset * static_cast<i32>(sizeof(VoxelOccupancyBrick)), voxel_model.voxel_occupancy_bricks.data(), brick_count * sizeof(VoxelOccupancyBrick));
+        memcpy(mapped_data + header_data_size + voxel_brick_offset * static_cast<i32>(sizeof(VoxelOccupancyBrick)), voxel_model.brick_as.bricks.data(), brick_count * sizeof(VoxelOccupancyBrick));
 
         for (auto& instance : voxel_model.instances)
         {
             auto& writing_instance = device.instances[instance_index];
-            writing_instance.size_in_bricks = glm::ivec4(voxel_model.size_in_bricks, 0);
+            writing_instance.size_in_bricks = glm::ivec4(voxel_model.brick_as.size_in_bricks, 0);
             writing_instance.brick_index_and_size_in_voxels = glm::ivec4(voxel_brick_offset, voxel_model.size);
             writing_instance.inverse_transform = instance.inverse_transform;
             instance_index++;
@@ -146,57 +133,8 @@ void VoxelModels::load(std::filesystem::path path, glm::ivec3 repeat)
 
         VoxelModelData voxel_model;
         voxel_model.size = glm::ivec3(round_up_to_multiple(ogt_model.size_x * repeat.x, VOXEL_BRICK_SIZE), round_up_to_multiple(ogt_model.size_z * repeat.y, VOXEL_BRICK_SIZE), round_up_to_multiple(ogt_model.size_y * repeat.z, VOXEL_BRICK_SIZE)); // VOX has different space so we use X Z Y
-        voxel_model.size_in_bricks = voxel_model.size / glm::ivec3(VOXEL_BRICK_SIZE);
         u32 voxel_volume = voxel_model.size.x * voxel_model.size.y * voxel_model.size.z;
-        voxel_model.voxel_occupancy_bricks.resize(voxel_count_to_brick_count(voxel_volume), 0);
-        // TODO: Technically all of our voxel models are now aligned to a size of 64, so we
-        //       don't need voxel_count_to_brick_count anymore and can just divide by 64
-
-        auto& new_size = voxel_model.size;
-        auto old_size = glm::ivec3(ogt_model.size_x, ogt_model.size_y, ogt_model.size_z);
-
-        for (i32 z = 0; z < old_size.z; z++)
-        {
-            for (i32 y = 0; y < old_size.y; y++)
-            {
-                for (i32 x = 0; x < old_size.x; x++)
-                {
-                    i32 vox_index = x + y * old_size.x + z * old_size.x * old_size.y;
-
-                    for (i32 rz = 0; rz < repeat.z; rz++)
-                    {
-                        for (i32 ry = 0; ry < repeat.y; ry++)
-                        {
-                            for (i32 rx = 0; rx < repeat.x; rx++)
-                            {
-                                i32 new_x = x + old_size.x * rx;
-                                i32 new_y = z + old_size.z * rz;
-                                i32 new_z = old_size.y - 1 - y + old_size.y * ry;
-
-                                //i32 index = new_x + new_y * new_size.x + new_z * new_size.x * new_size.y;
-
-                                glm::uvec3 voxel_position = glm::uvec3(new_x, new_y, new_z);
-                                glm::uvec3 brick_position = voxel_position / VOXEL_BRICK_SIZE;
-                                glm::uvec3 brick_local_position = voxel_position % VOXEL_BRICK_SIZE;
-
-                                u32 brick_index =
-                                    (brick_position.x * 1) +
-                                    (brick_position.y * voxel_model.size_in_bricks.x) +
-                                    (brick_position.z * voxel_model.size_in_bricks.x * voxel_model.size_in_bricks.y);
-
-                                u32 brick_local_index =
-                                    (brick_local_position.x * 1) +
-                                    (brick_local_position.y * VOXEL_BRICK_SIZE) +
-                                    (brick_local_position.z * VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE);
-
-                                if (ogt_model.voxel_data[vox_index] != 0)
-                                    voxel_model.voxel_occupancy_bricks[brick_index] |= (1ull << brick_local_index);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        voxel_model.brick_as = Data::AS::build_brick_AS(ogt_model, repeat);
 
         new_models.push_back(voxel_model);
     }
