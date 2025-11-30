@@ -72,61 +72,6 @@ uint unpack_voxel_from_occupancy_brick(uvec3 local_position, uint64_t brick)
 	return uint(brick >> brick_local_position_1d) & 1u;
 }
 
-vec4 DDA(inout IntersectionState state, Ray ray, inout ModelHeader header)
-{
-	uvec3 voxel_position = uvec3(ray.position);
-	ivec3 size = header.brick_index_and_size_in_voxels.gba;
-	ivec3 size_in_bricks = header.size_in_bricks.rgb;
-
-	uvec3 brick_position = uvec3(voxel_position) >> uvec3(2);
-	uint64_t current_occupancy_brick = get_voxel_occupancy_brick(brick_position, size_in_bricks, header.brick_index_and_size_in_voxels.r);
-
-	// If we start inside a voxel, return
-	if (current_occupancy_brick != 0u && unpack_voxel_from_occupancy_brick(voxel_position & uvec3(3u), current_occupancy_brick) != 0u)
-	{
-		return vec4(0.0f);
-	}
-
-	// Voxel Marching
-	const ivec3 t_sign = ivec3(sign(ray.direction));
-	const vec3 t_delta = abs(vec3(1.0f) / ray.direction);
-	vec3 t_max = abs(fract(ray.position) - max(t_sign, vec3(0.0f))) * t_delta;
-
-	uint check = size.x + size.y + size.z;
-	while (check > 0)
-	{
-		// Find the smallest t_max component
-		int axis = (t_max[2] < min(t_max[0], t_max[1])) ? 2 : int(t_max[0] > t_max[1]);
-
-		voxel_position[axis] += t_sign[axis];
-		uint voxel_axis_position = voxel_position[axis];
-		t_max[axis] += t_delta[axis];
-
-		if (brick_position != (voxel_position >> ivec3(2)))
-		{
-			brick_position = (voxel_position >> ivec3(2));
-			// Check bounds, since we know are always aligned to a brick at least we can do it here
-			if (voxel_axis_position < 0 || voxel_axis_position >= size[axis])
-			{
-				return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
-			}
-			current_occupancy_brick = get_voxel_occupancy_brick(brick_position, size_in_bricks, header.brick_index_and_size_in_voxels.r);
-		}
-
-		if (current_occupancy_brick != 0 && unpack_voxel_from_occupancy_brick(voxel_position & uvec3(3u), current_occupancy_brick) != 0u)
-		{
-			vec3 normal = vec3(0.0f);
-			normal[axis] = -t_sign[axis];
-			state.dummy_temp_voxel_pos[0] = int(voxel_position[0]);
-			state.dummy_temp_voxel_pos[1] = int(voxel_position[1]);
-			state.dummy_temp_voxel_pos[2] = int(voxel_position[2]);
-			return vec4(t_max[axis] - t_delta[axis], normal);
-		}
-		check -= 1;
-	}
-	return vec4(FLT_MAX, 0.0f, 0.0f, 0.0f);
-}
-
 vec4 Sub_Brick_DDA(inout IntersectionState state, Ray ray, inout ModelHeader header, ivec3 t_sign, vec3 t_delta, inout int brick_steps_taken, inout uint64_t current_occupancy_brick)
 {
 	uvec3 voxel_position = uvec3(ray.position);
@@ -179,10 +124,6 @@ vec4 Brick_DDA(inout IntersectionState state, Ray ray, inout ModelHeader header)
 
 	uvec3 brick_position = uvec3(ray.position) >> uvec3(2);
 	uint64_t current_occupancy_brick = get_voxel_occupancy_brick(brick_position, size_in_bricks, header.brick_index_and_size_in_voxels.r);
-
-	// If we start inside a brick
-	if (current_occupancy_brick != 0u)
-		return vec4(0.0f);
 
 	// Voxel Marching
 	const ivec3 t_sign = ivec3(sign(ray.direction));
@@ -329,8 +270,11 @@ void main()
 	state.dummy_temp_voxel_pos[1] = 0;
 	state.dummy_temp_voxel_pos[2] = 0;
 
+	uint64_t start = clockARB();
 	intersect(state, ray);
+	uint64_t end = clockARB();
+	float clockDiff = pow(float(end - start) / 400000.0, 1.0);
 
 	intersection_buffer.results[index].incoming_direction_and_hit_distance = vec4(ray.direction, state.t);
-	intersection_buffer.results[index].normal = vec4(state.normal, 0.0f);
+	intersection_buffer.results[index].normal = vec4(state.normal, clockDiff);
 }

@@ -45,12 +45,14 @@ void main()
 
     IntersectResult result = intersection_buffer.results[index];
 
-    if (result.incoming_direction_and_hit_distance.a != FLT_MAX)
-    {
-       imageStore(image, ivec2(gl_GlobalInvocationID), vec4(vec3(result.normal.rgb) * 0.5 + vec3(0.5f), 1.0f));
-    }
-    else
-    {
-        imageStore(image, ivec2(gl_GlobalInvocationID), vec4(0.0f));
-    }
+
+//    if (result.incoming_direction_and_hit_distance.a != FLT_MAX)
+//    {
+//        imageStore(image, ivec2(gl_GlobalInvocationID), vec4(vec3(result.normal.rgb) * 0.5 + vec3(0.5f), 1.0f));
+//    }
+//    else
+//    {
+//        imageStore(image, ivec2(gl_GlobalInvocationID), vec4(0.0f));
+//    }
+    imageStore(image, ivec2(gl_GlobalInvocationID), vec4(viridis_quintic(result.normal.a), 1.0f));
 }
