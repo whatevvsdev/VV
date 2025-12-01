@@ -667,9 +667,6 @@ namespace Renderer::Core
 
         function(cmd);
 
-        vkWaitForFences(Renderer::Core::get_logical_device(), 1, &internal.immediate_submit.fence, true, 9999999999);
-        vkResetFences(Renderer::Core::get_logical_device(), 1, &internal.immediate_submit.fence);
-
         VK_CHECK(vkEndCommandBuffer(cmd));
 
         VkSubmitInfo submit_info
