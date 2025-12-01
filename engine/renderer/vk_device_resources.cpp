@@ -73,7 +73,7 @@ void DeviceResources::immediate_copy_data_to_gpu(const std::string& buffer_name,
     staging_buffer.size = size_in_bytes;
 
     void* mapped_data;
-    printf("transferring");
+
     vmaMapMemory(Renderer::Core::get_vma_allocator(), staging_buffer.allocation, &mapped_data);
     memcpy(mapped_data, data, size_in_bytes);
     vmaUnmapMemory(Renderer::Core::get_vma_allocator(), staging_buffer.allocation);
