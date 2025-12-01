@@ -28,9 +28,11 @@ add_executable(VV main.cpp
         engine/renderer/device_resources.h
         engine/data/voxel_model.cpp
         engine/data/voxel_model.h
-        engine/data/acceleration_structures/voxel_brick.cpp
-        engine/data/acceleration_structures/voxel_brick.h
+        engine/data/structures/voxel_brick.cpp
+        engine/data/structures/voxel_brick.h
         common/math.h
+        engine/data/structures/voxel_raw.cpp
+        engine/data/structures/voxel_raw.h
 )
 
 # Force SDL to be compiled into
