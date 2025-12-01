@@ -3,7 +3,7 @@
 #include "../renderer/device_resources.h"
 #include "../../common/io.h"
 #include "../../common/math.h"
-#include "../data/acceleration_structures/voxel_brick.h"
+#include "../data/structures/voxel_brick.h"
 
 #include "ogt_vox.h"
 #include <glm/glm.hpp>
@@ -67,10 +67,10 @@ void VoxelModels::upload_models_to_gpu()
         voxel_brick_count_of_all_models_combined += voxel_model.brick_as.bricks.size();
     }
 
-    auto created_buffer = DeviceResources::create_buffer("voxel_data", sizeof(DeviceVoxelModelInstanceData) * instance_count + voxel_brick_count_of_all_models_combined * sizeof(VoxelOccupancyBrick));
+    auto created_buffer = DeviceResources::create_buffer("voxel_data", sizeof(DeviceVoxelModelInstanceData) * instance_count + voxel_brick_count_of_all_models_combined * sizeof(Data::AS::VoxelOccupancyBrick));
 
     i32 header_data_size = instance_count * sizeof(DeviceVoxelModelInstanceData);
-    i32 total_data_size = header_data_size + voxel_brick_count_of_all_models_combined * sizeof(VoxelOccupancyBrick);
+    i32 total_data_size = header_data_size + voxel_brick_count_of_all_models_combined * sizeof(Data::AS::VoxelOccupancyBrick);
     u8* mapped_data { nullptr };
     mapped_data = new u8[total_data_size];
 
@@ -82,7 +82,7 @@ void VoxelModels::upload_models_to_gpu()
         i32 volume = voxel_model.size.x * voxel_model.size.y * voxel_model.size.z;
         u32 brick_count = voxel_model.brick_as.bricks.size();
 
-        memcpy(mapped_data + header_data_size + voxel_brick_offset * static_cast<i32>(sizeof(VoxelOccupancyBrick)), voxel_model.brick_as.bricks.data(), brick_count * sizeof(VoxelOccupancyBrick));
+        memcpy(mapped_data + header_data_size + voxel_brick_offset * static_cast<i32>(sizeof(Data::AS::VoxelOccupancyBrick)), voxel_model.brick_as.bricks.data(), brick_count * sizeof(Data::AS::VoxelOccupancyBrick));
 
         for (auto& instance : voxel_model.instances)
         {
@@ -126,15 +126,15 @@ void VoxelModels::load(std::filesystem::path path, glm::ivec3 repeat)
     auto filename = path.filename().string();
 
     std::vector<VoxelModelData> new_models;
-
+    printf("1\n");
     for (u32 i = 0u; i < scene->num_models; i++)
     {
         auto& ogt_model = *scene->models[i];
 
         VoxelModelData voxel_model;
-        voxel_model.size = glm::ivec3(round_up_to_multiple(ogt_model.size_x * repeat.x, VOXEL_BRICK_SIZE), round_up_to_multiple(ogt_model.size_z * repeat.y, VOXEL_BRICK_SIZE), round_up_to_multiple(ogt_model.size_y * repeat.z, VOXEL_BRICK_SIZE)); // VOX has different space so we use X Z Y
-        u32 voxel_volume = voxel_model.size.x * voxel_model.size.y * voxel_model.size.z;
-        voxel_model.brick_as = Data::AS::build_brick_AS(ogt_model, repeat);
+        voxel_model.size = glm::ivec3(round_up_to_multiple(ogt_model.size_x * repeat.x, Data::AS::VOXEL_BRICK_SIZE), round_up_to_multiple(ogt_model.size_z * repeat.y, Data::AS::VOXEL_BRICK_SIZE), round_up_to_multiple(ogt_model.size_y * repeat.z, Data::AS::VOXEL_BRICK_SIZE)); // VOX has different space so we use X Z Y
+        Data::RawVoxelModel model = Data::build_raw_voxel_model(ogt_model, repeat);
+        voxel_model.brick_as = Data::AS::build_brick_AS(model);
 
         new_models.push_back(voxel_model);
     }
