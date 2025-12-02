@@ -8,7 +8,6 @@ namespace Data::AS
 {
     VoxelBrickAS build_brick_AS(const RawVoxelModel& model)
     {
-
         VoxelBrickAS brick_as;
 
         // VOX has different space so we use X Z Y to get the size in voxels
@@ -38,7 +37,7 @@ namespace Data::AS
                         (brick_local_position.z * VOXEL_BRICK_SIZE * VOXEL_BRICK_SIZE);
 
                     if (model.voxels[i] != 0)
-                        brick_as.bricks[brick_index] |= (1 << brick_local_index);
+                        brick_as.bricks[brick_index] |= (1ull << brick_local_index);
                 }
             }
         }
