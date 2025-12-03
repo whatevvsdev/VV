@@ -79,11 +79,6 @@ vec2 Sub_Brick_DDA(inout IntersectionState state, Ray ray, inout ModelHeader hea
 
 	uvec3 brick_position = uvec3(voxel_position) >> uvec3(2);
 
-	uint64_t maskX = move_bitmasks[(voxel_position[0] % 4) + (t_sign[0] < 0.0f ? 4 : 0) + 0];
-	uint64_t maskY = move_bitmasks[(voxel_position[1] % 4) + (t_sign[1] < 0.0f ? 4 : 0) + 8];
-	uint64_t maskZ = move_bitmasks[(voxel_position[2] % 4) + (t_sign[2] < 0.0f ? 4 : 0) + 16];
-	current_occupancy_brick &= ~(maskX & maskY & maskZ);
-
 	// If we start inside a voxel, return
 	if (unpack_voxel_from_occupancy_brick(voxel_position & uvec3(3u), current_occupancy_brick) != 0u)
 		return vec2(0.0f);
@@ -91,7 +86,7 @@ vec2 Sub_Brick_DDA(inout IntersectionState state, Ray ray, inout ModelHeader hea
 	// Voxel Marching
 	vec3 t_max = abs(fract(ray.position) - max(t_sign, vec3(0.0f))) * t_delta;
 
-	while (true)
+	while (current_occupancy_brick != 0)
 	{
 		// Find the smallest t_max component
 		uint axis = (t_max[2] < min(t_max[0], t_max[1])) ? 2 : int(t_max[0] > t_max[1]);
@@ -297,7 +292,7 @@ void main()
 	uint64_t start = clockARB();
 	intersect(state, ray);
 	uint64_t end = clockARB();
-	float clockDiff = pow(float(end - start) / 1000000.0, 0.75);
+	float clockDiff = pow(float(end - start) / 270000.0, 1.00);
 
 	intersection_buffer.results[index].incoming_direction_and_hit_distance = vec4(ray.direction, state.t_normal_axis_and_two_nothings.r);
 	intersection_buffer.results[index].normal = vec4(0.0f);
