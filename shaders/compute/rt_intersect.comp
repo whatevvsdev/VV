@@ -249,41 +249,6 @@ void main()
 		return;
 	}
 
-	uint64_t masks[24] =
-	{
-		(uint64_t(0x00000000u) << 32) | uint64_t(0x00000000u),
-		(uint64_t(0x11111111u) << 32) | uint64_t(0x11111111u),
-		(uint64_t(0x33333333u) << 32) | uint64_t(0x33333333u),
-		(uint64_t(0x77777777u) << 32) | uint64_t(0x77777777u),
-		(uint64_t(0xEEEEEEEEu) << 32) | uint64_t(0xEEEEEEEEu),
-		(uint64_t(0xCCCCCCCCu) << 32) | uint64_t(0xCCCCCCCCu),
-		(uint64_t(0x88888888u) << 32) | uint64_t(0x88888888u),
-		(uint64_t(0x00000000u) << 32) | uint64_t(0x00000000u),
-		(uint64_t(0x00000000u) << 32) | uint64_t(0x00000000u),
-		(uint64_t(0xFFFF0000u) << 32) | uint64_t(0x00000000u),
-		(uint64_t(0xFFFFFFFFu) << 32) | uint64_t(0x00000000u),
-		(uint64_t(0xFFFFFFFFu) << 32) | uint64_t(0xFFFF0000u),
-		(uint64_t(0x0000FFFFu) << 32) | uint64_t(0xFFFFFFFFu),
-		(uint64_t(0x00000000u) << 32) | uint64_t(0xFFFFFFFFu),
-		(uint64_t(0x00000000u) << 32) | uint64_t(0x0000FFFFu),
-		(uint64_t(0x00000000u) << 32) | uint64_t(0x00000000u),
-		(uint64_t(0x00000000u) << 32) | uint64_t(0x00000000u),
-		(uint64_t(0xF000F000u) << 32) | uint64_t(0xF000F000u),
-		(uint64_t(0xFF00FF00u) << 32) | uint64_t(0xFF00FF00u),
-		(uint64_t(0xFFF0FFF0u) << 32) | uint64_t(0xFFF0FFF0u),
-		(uint64_t(0x0FFF0FFFu) << 32) | uint64_t(0x0FFF0FFFu),
-		(uint64_t(0x00FF00FFu) << 32) | uint64_t(0x00FF00FFu),
-		(uint64_t(0x000F000Fu) << 32) | uint64_t(0x000F000Fu),
-		(uint64_t(0x00000000u) << 32) | uint64_t(0x00000000u)
-	};
-
-	uint thread_id = gl_LocalInvocationID.x + gl_LocalInvocationID.y * gl_WorkGroupSize.x;
-
-	// Fill shared memory
-	if (thread_id < 24)
-		move_bitmasks[thread_id] = masks[thread_id];
-
-	barrier();
 	Ray ray = ray_buffer.rays[index];
 
 	IntersectionState state;
