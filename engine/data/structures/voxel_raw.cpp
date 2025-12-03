@@ -33,8 +33,7 @@ Data::RawVoxelModel Data::build_raw_voxel_model(const ogt_vox_model& model, glm:
 
                             i32 new_index = new_x + new_y * new_size.x + new_z * new_size.x * new_size.y;
 
-                            if (model.voxel_data[vox_index] != 0)
-                                raw_model.voxels[new_index] = 1;
+                            raw_model.voxels[new_index] = model.voxel_data[vox_index];
                         }
                     }
                 }
