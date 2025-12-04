@@ -326,7 +326,7 @@ void Renderer::end_frame()
     u32 dispatch_width = std::ceil(swapchain_data.surface_extent.width / 16.0);
     u32 dispatch_height = std::ceil(swapchain_data.surface_extent.height / 16.0);
     u32 dispatch_width2 = std::ceil(swapchain_data.surface_extent.width / 8.0);
-    u32 dispatch_height2 = std::ceil(swapchain_data.surface_extent.height / 8.0);
+    u32 dispatch_height2 = std::ceil(swapchain_data.surface_extent.height / 16.0);
 
     compute_push_constants.render_extent = glm::ivec2(swapchain_data.surface_extent.width, swapchain_data.surface_extent.height);
 
